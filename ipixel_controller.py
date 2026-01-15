@@ -41,6 +41,13 @@ class iPixelController:
         self.load_presets()
         self.settings = self.load_settings()
         
+        # Teams status monitoring
+        self.teams_monitoring = False
+        self.teams_access_token = None
+        self.teams_refresh_token = None
+        self.teams_last_status = None
+        self.teams_timer = None
+        
         # Setup UI
         self.setup_ui()
         
@@ -101,6 +108,7 @@ class iPixelController:
         self.create_youtube_tab()
         self.create_weather_tab()
         self.create_animations_tab()
+        self.create_teams_status_tab()
         self.create_settings_tab()
         
     def create_control_board_tab(self):
@@ -2187,6 +2195,344 @@ class iPixelController:
             dialog.destroy()
         
         ttk.Button(dialog, text="Save", command=save).pack(pady=10)
+    
+    def create_teams_status_tab(self):
+        """Create the Teams Status monitoring tab"""
+        teams_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(teams_frame, text="Teams Status")
+        
+        teams_frame.columnconfigure(0, weight=1)
+        
+        # Info section
+        info_frame = ttk.LabelFrame(teams_frame, text="ℹ️ About Teams Status", padding="10")
+        info_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        info_text = (
+            "Automatically change your LED display based on your Microsoft Teams status!\n\n"
+            "• Available = Green display\n"
+            "• Busy / In a call = Red display\n"
+            "• Away = Yellow display\n"
+            "• Do Not Disturb = Purple display\n"
+            "• Offline = Gray display\n\n"
+            "You can map each status to a specific preset you've saved."
+        )
+        ttk.Label(info_frame, text=info_text, justify=tk.LEFT, wraplength=750).pack()
+        
+        # Authentication section
+        auth_frame = ttk.LabelFrame(teams_frame, text="🔐 Microsoft Authentication", padding="10")
+        auth_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        self.teams_auth_status_var = tk.StringVar(value="Not authenticated")
+        ttk.Label(auth_frame, textvariable=self.teams_auth_status_var, 
+                 font=('TkDefaultFont', 9, 'italic')).grid(row=0, column=0, columnspan=2, pady=(0, 10))
+        
+        ttk.Button(auth_frame, text="🔑 Authenticate with Microsoft", 
+                  command=self.authenticate_teams).grid(row=1, column=0, padx=(0, 5))
+        ttk.Button(auth_frame, text="🔓 Sign Out", 
+                  command=self.signout_teams).grid(row=1, column=1)
+        
+        # Status mapping section
+        mapping_frame = ttk.LabelFrame(teams_frame, text="📋 Status → Preset Mapping", padding="10")
+        mapping_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        # Get preset names for dropdown
+        preset_names = ["(None)"] + [p["name"] for p in self.presets]
+        
+        statuses = [
+            ("Available", "🟢", "teams_available_preset"),
+            ("Busy", "🔴", "teams_busy_preset"),
+            ("Do Not Disturb", "🟣", "teams_dnd_preset"),
+            ("In a meeting", "🔴", "teams_meeting_preset"),
+            ("Away", "🟡", "teams_away_preset"),
+            ("Be Right Back", "🟡", "teams_brb_preset"),
+            ("Offline", "⚫", "teams_offline_preset")
+        ]
+        
+        self.teams_preset_vars = {}
+        
+        for idx, (status_name, emoji, var_name) in enumerate(statuses):
+            ttk.Label(mapping_frame, text=f"{emoji} {status_name}:").grid(row=idx, column=0, sticky=tk.W, pady=2, padx=(0, 10))
+            
+            var = tk.StringVar(value=self.settings.get(var_name, "(None)"))
+            self.teams_preset_vars[var_name] = var
+            
+            combo = ttk.Combobox(mapping_frame, textvariable=var, values=preset_names, 
+                                state="readonly", width=40)
+            combo.grid(row=idx, column=1, sticky=(tk.W, tk.E), pady=2)
+            combo.bind('<<ComboboxSelected>>', lambda e, v=var_name: self.save_teams_mapping(v))
+        
+        mapping_frame.columnconfigure(1, weight=1)
+        
+        # Monitoring section  
+        monitor_frame = ttk.LabelFrame(teams_frame, text="👁️ Status Monitoring", padding="10")
+        monitor_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        # Current status display
+        ttk.Label(monitor_frame, text="Current Status:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+        self.teams_current_status_var = tk.StringVar(value="Unknown")
+        ttk.Label(monitor_frame, textvariable=self.teams_current_status_var, 
+                 font=('TkDefaultFont', 10, 'bold')).grid(row=0, column=1, sticky=tk.W)
+        
+        # Refresh interval
+        ttk.Label(monitor_frame, text="Check every:").grid(row=1, column=0, sticky=tk.W, padx=(0, 10), pady=(10, 0))
+        self.teams_refresh_var = tk.IntVar(value=self.settings.get('teams_refresh_interval', 30))
+        interval_frame = ttk.Frame(monitor_frame)
+        interval_frame.grid(row=1, column=1, sticky=tk.W, pady=(10, 0))
+        ttk.Spinbox(interval_frame, from_=10, to=300, textvariable=self.teams_refresh_var, 
+                   width=10).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(interval_frame, text="seconds").pack(side=tk.LEFT)
+        
+        # Control buttons
+        control_frame = ttk.Frame(monitor_frame)
+        control_frame.grid(row=2, column=0, columnspan=2, pady=(15, 0))
+        
+        self.start_teams_btn = ttk.Button(control_frame, text="▶️ Start Monitoring", 
+                                         command=self.start_teams_monitoring)
+        self.start_teams_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.stop_teams_btn = ttk.Button(control_frame, text="⏹️ Stop Monitoring", 
+                                        command=self.stop_teams_monitoring, state=tk.DISABLED)
+        self.stop_teams_btn.pack(side=tk.LEFT)
+        
+        # Status info
+        self.teams_monitor_status_var = tk.StringVar(value="Monitoring: Not running")
+        ttk.Label(monitor_frame, textvariable=self.teams_monitor_status_var, 
+                 font=('TkDefaultFont', 9, 'italic'), foreground='gray').grid(row=3, column=0, columnspan=2, pady=(10, 0))
+    
+    def save_teams_mapping(self, setting_name):
+        """Save Teams status to preset mapping"""
+        value = self.teams_preset_vars[setting_name].get()
+        self.settings[setting_name] = value
+        self.save_settings()
+    
+    def authenticate_teams(self):
+        """Authenticate with Microsoft Graph API for Teams presence"""
+        messagebox.showinfo(
+            "Microsoft Teams Authentication",
+            "To access your Teams status, you need to:\n\n"
+            "1. Register an app in Azure Active Directory\n"
+            "2. Grant 'Presence.Read' permission\n"
+            "3. Get your Client ID and Tenant ID\n\n"
+            "This requires a Microsoft 365 account.\n\n"
+            "See the documentation for detailed setup instructions:\n"
+            "https://docs.microsoft.com/graph/auth-v2-user"
+        )
+        
+        # Simple dialog for entering credentials
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Microsoft Graph API Setup")
+        dialog.geometry("500x300")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        ttk.Label(dialog, text="Azure AD Application Details", font=('TkDefaultFont', 11, 'bold')).pack(pady=(15, 10))
+        
+        # Client ID
+        ttk.Label(dialog, text="Client ID (Application ID):").pack(anchor=tk.W, padx=20, pady=(10, 0))
+        client_id_entry = ttk.Entry(dialog, width=60)
+        client_id_entry.pack(padx=20, pady=(0, 10))
+        client_id_entry.insert(0, self.settings.get('teams_client_id', ''))
+        
+        # Tenant ID
+        ttk.Label(dialog, text="Tenant ID (Directory ID):").pack(anchor=tk.W, padx=20)
+        tenant_id_entry = ttk.Entry(dialog, width=60)
+        tenant_id_entry.pack(padx=20, pady=(0, 10))
+        tenant_id_entry.insert(0, self.settings.get('teams_tenant_id', ''))
+        
+        # Client Secret
+        ttk.Label(dialog, text="Client Secret:").pack(anchor=tk.W, padx=20)
+        secret_entry = ttk.Entry(dialog, width=60, show="*")
+        secret_entry.pack(padx=20, pady=(0, 15))
+        secret_entry.insert(0, self.settings.get('teams_client_secret', ''))
+        
+        def save_credentials():
+            client_id = client_id_entry.get().strip()
+            tenant_id = tenant_id_entry.get().strip()
+            client_secret = secret_entry.get().strip()
+            
+            if not all([client_id, tenant_id, client_secret]):
+                messagebox.showwarning("Missing Info", "Please fill in all fields")
+                return
+            
+            self.settings['teams_client_id'] = client_id
+            self.settings['teams_tenant_id'] = tenant_id
+            self.settings['teams_client_secret'] = client_secret
+            self.save_settings()
+            
+            self.teams_auth_status_var.set("✓ Credentials saved. Ready to monitor!")
+            dialog.destroy()
+            messagebox.showinfo("Success", "Credentials saved! You can now start monitoring your Teams status.")
+        
+        ttk.Button(dialog, text="Save & Close", command=save_credentials).pack(pady=10)
+    
+    def signout_teams(self):
+        """Sign out from Teams monitoring"""
+        self.stop_teams_monitoring()
+        self.settings['teams_client_id'] = ''
+        self.settings['teams_tenant_id'] = ''
+        self.settings['teams_client_secret'] = ''
+        self.teams_access_token = None
+        self.save_settings()
+        self.teams_auth_status_var.set("Not authenticated")
+        messagebox.showinfo("Signed Out", "Microsoft Teams credentials have been removed.")
+    
+    def start_teams_monitoring(self):
+        """Start monitoring Teams status"""
+        # Check if authenticated
+        if not all([
+            self.settings.get('teams_client_id'),
+            self.settings.get('teams_tenant_id'),
+            self.settings.get('teams_client_secret')
+        ]):
+            messagebox.showwarning("Not Authenticated", "Please authenticate with Microsoft first.")
+            return
+        
+        if not self.is_connected:
+            messagebox.showwarning("Not Connected", "Please connect to your LED panel first.")
+            return
+        
+        self.teams_monitoring = True
+        self.start_teams_btn.config(state=tk.DISABLED)
+        self.stop_teams_btn.config(state=tk.NORMAL)
+        self.teams_monitor_status_var.set("Monitoring: Running ✓")
+        
+        # Start checking status
+        self.check_teams_status()
+    
+    def stop_teams_monitoring(self):
+        """Stop monitoring Teams status"""
+        self.teams_monitoring = False
+        if self.teams_timer:
+            self.root.after_cancel(self.teams_timer)
+            self.teams_timer = None
+        
+        self.start_teams_btn.config(state=tk.NORMAL)
+        self.stop_teams_btn.config(state=tk.DISABLED)
+        self.teams_monitor_status_var.set("Monitoring: Stopped")
+    
+    def check_teams_status(self):
+        """Check current Teams status via Microsoft Graph API"""
+        if not self.teams_monitoring:
+            return
+        
+        def fetch_status():
+            try:
+                # Get access token if needed
+                if not self.teams_access_token:
+                    token_response = self.get_teams_access_token()
+                    if not token_response:
+                        self.root.after(0, lambda: messagebox.showerror(
+                            "Authentication Failed", 
+                            "Could not authenticate with Microsoft Graph API. Check your credentials."
+                        ))
+                        self.root.after(0, self.stop_teams_monitoring)
+                        return
+                    self.teams_access_token = token_response
+                
+                # Get user presence
+                headers = {
+                    'Authorization': f'Bearer {self.teams_access_token}',
+                    'Content-Type': 'application/json'
+                }
+                
+                # Use Graph API to get presence
+                response = requests.get(
+                    'https://graph.microsoft.com/v1.0/me/presence',
+                    headers=headers,
+                    timeout=10
+                )
+                
+                if response.status_code == 401:
+                    # Token expired, refresh it
+                    self.teams_access_token = None
+                    self.root.after(0, self.check_teams_status)
+                    return
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    availability = data.get('availability', 'Unknown')
+                    activity = data.get('activity', 'Unknown')
+                    
+                    # Update UI with current status
+                    self.root.after(0, lambda: self.teams_current_status_var.set(
+                        f"{availability} ({activity})"
+                    ))
+                    
+                    # Check if status changed
+                    if availability != self.teams_last_status:
+                        self.teams_last_status = availability
+                        self.root.after(0, lambda: self.handle_teams_status_change(availability))
+                else:
+                    print(f"Teams API error: {response.status_code} - {response.text}")
+                    
+            except Exception as e:
+                print(f"Error checking Teams status: {e}")
+        
+        # Run in background thread
+        threading.Thread(target=fetch_status, daemon=True).start()
+        
+        # Schedule next check
+        interval = self.teams_refresh_var.get() * 1000
+        self.teams_timer = self.root.after(interval, self.check_teams_status)
+    
+    def get_teams_access_token(self):
+        """Get access token from Microsoft Graph API"""
+        try:
+            import requests
+            
+            tenant_id = self.settings.get('teams_tenant_id')
+            client_id = self.settings.get('teams_client_id')
+            client_secret = self.settings.get('teams_client_secret')
+            
+            # Using client credentials flow (requires admin consent)
+            token_url = f'https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token'
+            
+            data = {
+                'grant_type': 'client_credentials',
+                'client_id': client_id,
+                'client_secret': client_secret,
+                'scope': 'https://graph.microsoft.com/.default'
+            }
+            
+            response = requests.post(token_url, data=data, timeout=10)
+            
+            if response.status_code == 200:
+                return response.json()['access_token']
+            else:
+                print(f"Token error: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            print(f"Error getting access token: {e}")
+            return None
+    
+    def handle_teams_status_change(self, status):
+        """Handle Teams status change by activating corresponding preset"""
+        # Map status to setting name
+        status_mapping = {
+            'Available': 'teams_available_preset',
+            'Busy': 'teams_busy_preset',
+            'DoNotDisturb': 'teams_dnd_preset',
+            'InAMeeting': 'teams_meeting_preset',
+            'Away': 'teams_away_preset',
+            'BeRightBack': 'teams_brb_preset',
+            'Offline': 'teams_offline_preset'
+        }
+        
+        setting_name = status_mapping.get(status)
+        if not setting_name:
+            return
+        
+        preset_name = self.settings.get(setting_name)
+        if not preset_name or preset_name == "(None)":
+            return
+        
+        # Find and execute the preset
+        for preset in self.presets:
+            if preset['name'] == preset_name:
+                self.execute_preset(preset)
+                print(f"Teams status changed to {status}, executed preset: {preset_name}")
+                break
     
     def create_settings_tab(self):
         """Create the settings control tab"""
