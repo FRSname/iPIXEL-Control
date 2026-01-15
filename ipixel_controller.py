@@ -86,39 +86,21 @@ class iPixelController:
         self.status_label = ttk.Label(connection_frame, text="Not connected", foreground="red")
         self.status_label.grid(row=1, column=0, columnspan=4, pady=(5, 0))
         
-        # Notebook for different control modes
+        # Notebook for different control modes (keeping ttk.Notebook for simplicity)
         self.notebook = ttk.Notebook(main_frame)
-        self.notebook.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        self.notebook.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10), padx=10)
         main_frame.rowconfigure(1, weight=1)
         
-        # Control Board Tab (first for quick access)
+        # Create tab contents
         self.create_control_board_tab()
-        
-        # Text Tab
         self.create_text_tab()
-        
-        # Image Tab
         self.create_image_tab()
-        
-        # Text+Image Overlay Tab
         self.create_overlay_tab()
-        
-        # Clock Tab
         self.create_clock_tab()
-        
-        # Stock Market Tab
         self.create_stock_tab()
-        
-        # YouTube Stats Tab
         self.create_youtube_tab()
-        
-        # Weather Tab
         self.create_weather_tab()
-        
-        # Pixel Art Animations Tab
         self.create_animations_tab()
-        
-        # Settings Tab
         self.create_settings_tab()
         
     def create_control_board_tab(self):
@@ -2267,7 +2249,7 @@ class iPixelController:
                 error_msg = str(e)
                 self.root.after(0, lambda: messagebox.showerror("Scan Error", f"Failed to scan: {error_msg}"))
             finally:
-                self.root.after(0, lambda: self.scan_btn.config(state=tk.NORMAL, text="Scan"))
+                self.root.after(0, lambda: self.scan_btn.configure(state=tk.NORMAL, text="Scan"))
         
         threading.Thread(target=scan_task, daemon=True).start()
     
@@ -2423,6 +2405,10 @@ class iPixelController:
         if hasattr(self, 'clock_running') and self.clock_running:
             self.stop_live_clock()
         
+        # Clear last preset to prevent auto-restore from overriding manual text
+        self.settings['last_preset'] = None
+        self.save_settings()
+        
         self.send_text_btn.config(state=tk.DISABLED, text="Sending...")
         
         def send_task():
@@ -2490,6 +2476,10 @@ class iPixelController:
         # Stop any running live clock
         if hasattr(self, 'clock_running') and self.clock_running:
             self.stop_live_clock()
+        
+        # Clear last preset to prevent auto-restore from overriding manual image
+        self.settings['last_preset'] = None
+        self.save_settings()
         
         self.send_image_btn.config(state=tk.DISABLED, text="Sending...")
         
@@ -2567,6 +2557,10 @@ class iPixelController:
         if not self.is_connected:
             messagebox.showwarning("Not Connected", "Connect to device first")
             return
+        
+        # Clear last preset to prevent auto-restore from overriding manual clock
+        self.settings['last_preset'] = None
+        self.save_settings()
         
         mode = self.clock_mode_var.get()
         
