@@ -31,6 +31,10 @@
 - **Text Tab**: Send custom text with colors
 - **Image Tab**: Display images
 - **Clock Tab**: Show time
+- **📈 Stock Tab**: Live stock market prices
+- **📺 YouTube Tab**: Channel statistics (requires API key)
+- **🌤️ Weather Tab**: Current weather conditions (requires API key)
+- **🎨 Animations Tab**: Pixel art animations (Game of Life, Matrix, Fire, etc.)
 - **Settings Tab**: Adjust brightness and power
 
 ## 🔧 Alternative: Manual Installation
@@ -93,6 +97,49 @@ If `run.bat` doesn't work, follow these steps:
 - **32x32 pixels**: Suitable for short text and simple images
 - **96x16 pixels**: Perfect for scrolling text
 - **20x64 pixels**: Wide format for text
+
+## 🔥 New Features Guide
+
+### Stock Market Display
+1. Go to **📈 Stock** tab
+2. Enter ticker (AAPL, TSLA, etc.)
+3. Click "Fetch Stock Data"
+4. Customize colors and format
+5. Click "Send to Display"
+6. Enable auto-refresh for live updates
+
+**No API key needed!**
+
+### YouTube Stats
+1. Get free API key from [Google Cloud Console](https://console.cloud.google.com/)
+2. Go to **📺 YouTube** tab
+3. Enter and save API key
+4. Enter channel @handle or ID
+5. Click "Fetch Stats"
+6. Choose display format
+7. Click "Send to Display"
+
+### Weather Display
+1. Get free API key from [OpenWeatherMap](https://openweathermap.org/api)
+2. Go to **🌤️ Weather** tab
+3. Enter and save API key
+4. Enter your city name
+5. Select °C or °F
+6. Click "Fetch Weather"
+7. Click "Send to Display"
+
+### Pixel Art Animations
+1. Go to **🎨 Animations** tab
+2. Choose animation type:
+   - **Game of Life**: Classic cellular automaton
+   - **Matrix**: Digital rain effect
+   - **Fire**: Realistic fire simulation
+   - **Starfield**: Moving stars
+   - **Plasma**: Colorful plasma waves
+3. Select color scheme and FPS
+4. Click "Start Animation"
+
+**Pro tip**: Save your favorite configs as presets!
 
 ## 🆘 Need Help?
 

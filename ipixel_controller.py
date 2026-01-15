@@ -106,6 +106,18 @@ class iPixelController:
         # Clock Tab
         self.create_clock_tab()
         
+        # Stock Market Tab
+        self.create_stock_tab()
+        
+        # YouTube Stats Tab
+        self.create_youtube_tab()
+        
+        # Weather Tab
+        self.create_weather_tab()
+        
+        # Pixel Art Animations Tab
+        self.create_animations_tab()
+        
         # Settings Tab
         self.create_settings_tab()
         
@@ -688,6 +700,1516 @@ class iPixelController:
         """Create the settings control tab"""
         settings_frame = ttk.Frame(self.notebook, padding="10")
         self.notebook.add(settings_frame, text="Settings")
+    
+    def create_stock_tab(self):
+        """Create the stock market display tab"""
+        stock_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(stock_frame, text="📈 Stocks")
+        
+        stock_frame.columnconfigure(1, weight=1)
+        
+        # Info
+        info_label = ttk.Label(stock_frame, 
+                              text="Display live stock market prices on your LED panel",
+                              font=('TkDefaultFont', 9, 'italic'))
+        info_label.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
+        
+        # Stock ticker input
+        ttk.Label(stock_frame, text="Stock Ticker:").grid(row=1, column=0, sticky=tk.W, pady=(0, 5))
+        
+        ticker_frame = ttk.Frame(stock_frame)
+        ticker_frame.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=(0, 5))
+        
+        self.stock_ticker_var = tk.StringVar(value="AAPL")
+        ticker_entry = ttk.Entry(ticker_frame, textvariable=self.stock_ticker_var, width=15)
+        ticker_entry.grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
+        
+        ttk.Label(ticker_frame, text="(e.g., AAPL, MSFT, TSLA, BTC-USD)", 
+                 foreground="gray", font=('TkDefaultFont', 8)).grid(row=0, column=1, sticky=tk.W)
+        
+        # Display format
+        ttk.Label(stock_frame, text="Display Format:").grid(row=2, column=0, sticky=tk.W, pady=(10, 5))
+        
+        self.stock_format_var = tk.StringVar(value="price_change")
+        format_frame = ttk.Frame(stock_frame)
+        format_frame.grid(row=2, column=1, sticky=tk.W, pady=(10, 5))
+        
+        ttk.Radiobutton(format_frame, text="Price + Change", 
+                       variable=self.stock_format_var, value="price_change").pack(anchor=tk.W)
+        ttk.Radiobutton(format_frame, text="Price Only", 
+                       variable=self.stock_format_var, value="price_only").pack(anchor=tk.W)
+        ttk.Radiobutton(format_frame, text="Ticker + Price", 
+                       variable=self.stock_format_var, value="ticker_price").pack(anchor=tk.W)
+        
+        # Text color
+        ttk.Label(stock_frame, text="Text Color:").grid(row=3, column=0, sticky=tk.W, pady=(10, 5))
+        
+        stock_color_frame = ttk.Frame(stock_frame)
+        stock_color_frame.grid(row=3, column=1, sticky=tk.W, pady=(10, 5))
+        
+        self.stock_text_color = "#00FF00"
+        self.stock_color_canvas = tk.Canvas(stock_color_frame, width=30, height=20, 
+                                           bg=self.stock_text_color, relief=tk.SUNKEN)
+        self.stock_color_canvas.pack(side=tk.LEFT, padx=(0, 5))
+        
+        ttk.Button(stock_color_frame, text="Choose", command=self.choose_stock_color).pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Auto color based on change
+        self.stock_auto_color_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(stock_color_frame, text="Auto color (green=up, red=down)", 
+                       variable=self.stock_auto_color_var).pack(side=tk.LEFT)
+        
+        # Background color
+        ttk.Label(stock_frame, text="Background:").grid(row=4, column=0, sticky=tk.W, pady=(0, 5))
+        
+        stock_bg_frame = ttk.Frame(stock_frame)
+        stock_bg_frame.grid(row=4, column=1, sticky=tk.W, pady=(0, 5))
+        
+        self.stock_bg_color = "#000000"
+        self.stock_bg_canvas = tk.Canvas(stock_bg_frame, width=30, height=20, 
+                                        bg=self.stock_bg_color, relief=tk.SUNKEN)
+        self.stock_bg_canvas.pack(side=tk.LEFT, padx=(0, 5))
+        
+        ttk.Button(stock_bg_frame, text="Choose", command=self.choose_stock_bg_color).pack(side=tk.LEFT)
+        
+        # Animation
+        ttk.Label(stock_frame, text="Animation:").grid(row=5, column=0, sticky=tk.W, pady=(10, 5))
+        
+        self.stock_animation_var = tk.IntVar(value=1)
+        animation_frame = ttk.Frame(stock_frame)
+        animation_frame.grid(row=5, column=1, sticky=tk.W, pady=(10, 5))
+        
+        animations = [("Static", 0), ("Scroll Left", 1), ("Scroll Right", 2)]
+        for text, value in animations:
+            ttk.Radiobutton(animation_frame, text=text, variable=self.stock_animation_var, 
+                          value=value).pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Speed
+        ttk.Label(stock_frame, text="Scroll Speed:").grid(row=6, column=0, sticky=tk.W, pady=(0, 5))
+        
+        self.stock_speed_var = tk.IntVar(value=30)
+        speed_frame = ttk.Frame(stock_frame)
+        speed_frame.grid(row=6, column=1, sticky=(tk.W, tk.E), pady=(0, 5))
+        
+        ttk.Scale(speed_frame, from_=1, to=100, variable=self.stock_speed_var, 
+                 orient=tk.HORIZONTAL, length=200).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(speed_frame, textvariable=self.stock_speed_var).pack(side=tk.LEFT)
+        
+        # Auto-refresh
+        ttk.Label(stock_frame, text="Auto Refresh:").grid(row=7, column=0, sticky=tk.W, pady=(10, 5))
+        
+        refresh_frame = ttk.Frame(stock_frame)
+        refresh_frame.grid(row=7, column=1, sticky=tk.W, pady=(10, 5))
+        
+        self.stock_auto_refresh_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(refresh_frame, text="Enable auto-refresh every", 
+                       variable=self.stock_auto_refresh_var).pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.stock_refresh_interval_var = tk.IntVar(value=60)
+        ttk.Spinbox(refresh_frame, from_=30, to=300, increment=30, 
+                   textvariable=self.stock_refresh_interval_var, width=5).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(refresh_frame, text="seconds").pack(side=tk.LEFT)
+        
+        # Current stock info display
+        self.stock_info_frame = ttk.LabelFrame(stock_frame, text="Stock Information", padding="10")
+        self.stock_info_frame.grid(row=8, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(15, 10))
+        
+        self.stock_info_label = ttk.Label(self.stock_info_frame, text="Fetch stock data to see information", 
+                                         foreground="gray")
+        self.stock_info_label.pack()
+        
+        # Buttons
+        button_frame = ttk.Frame(stock_frame)
+        button_frame.grid(row=9, column=0, columnspan=2, pady=(10, 0))
+        
+        ttk.Button(button_frame, text="📊 Fetch Stock Data", 
+                  command=self.fetch_stock_data).pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.send_stock_btn = ttk.Button(button_frame, text="📤 Send to Display", 
+                                        command=self.send_stock_to_display, state=tk.DISABLED)
+        self.send_stock_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        ttk.Button(button_frame, text="💾 Save as Preset", 
+                  command=self.save_stock_preset).pack(side=tk.LEFT)
+        
+        # Store stock data
+        self.current_stock_data = None
+        self.stock_refresh_job = None
+    
+    def format_stock_price(self, price):
+        """Format stock price to maximum 8 characters including $"""
+        # Format: $XXXX.XX (8 chars max)
+        if price >= 10000:
+            # For prices >= 10000, use K notation: $12.34K
+            return f"${price/1000:.2f}K"
+        elif price >= 1000:
+            # For prices 1000-9999, show 1-2 decimals: $1234.56
+            formatted = f"${price:.2f}"
+            if len(formatted) > 8:
+                formatted = f"${price:.1f}"
+            if len(formatted) > 8:
+                formatted = f"${price:.0f}"
+            return formatted
+        elif price >= 100:
+            # For prices 100-999, show 2 decimals: $123.45
+            return f"${price:.2f}"
+        elif price >= 10:
+            # For prices 10-99, show 2-3 decimals: $12.345
+            formatted = f"${price:.3f}"
+            if len(formatted) > 8:
+                formatted = f"${price:.2f}"
+            return formatted
+        else:
+            # For prices < 10, show up to 4 decimals: $1.2345
+            formatted = f"${price:.4f}"
+            if len(formatted) > 8:
+                formatted = f"${price:.3f}"
+            if len(formatted) > 8:
+                formatted = f"${price:.2f}"
+            return formatted
+    
+    def choose_stock_color(self):
+        """Choose text color for stock display"""
+        color = colorchooser.askcolor(initialcolor=self.stock_text_color, title="Choose Text Color")
+        if color[1]:
+            self.stock_text_color = color[1]
+            self.stock_color_canvas.config(bg=self.stock_text_color)
+    
+    def choose_stock_bg_color(self):
+        """Choose background color for stock display"""
+        color = colorchooser.askcolor(initialcolor=self.stock_bg_color, title="Choose Background Color")
+        if color[1]:
+            self.stock_bg_color = color[1]
+            self.stock_bg_canvas.config(bg=self.stock_bg_color)
+    
+    def fetch_stock_data(self):
+        """Fetch current stock data"""
+        ticker = self.stock_ticker_var.get().strip().upper()
+        if not ticker:
+            messagebox.showwarning("No Ticker", "Please enter a stock ticker symbol")
+            return
+        
+        # Show loading message
+        self.stock_info_label.config(text=f"Fetching data for {ticker}...", foreground="blue")
+        
+        def fetch_task():
+            try:
+                import yfinance as yf
+                stock = yf.Ticker(ticker)
+                info = stock.info
+                
+                # Get current price and change
+                current_price = info.get('currentPrice') or info.get('regularMarketPrice')
+                previous_close = info.get('previousClose') or info.get('regularMarketPreviousClose')
+                
+                if current_price is None:
+                    self.root.after(0, lambda: self.stock_info_label.config(
+                        text=f"Could not fetch data for {ticker}. Check ticker symbol.", 
+                        foreground="red"))
+                    return
+                
+                change = current_price - previous_close if previous_close else 0
+                change_percent = (change / previous_close * 100) if previous_close else 0
+                
+                stock_name = info.get('shortName', ticker)
+                
+                self.current_stock_data = {
+                    'ticker': ticker,
+                    'name': stock_name,
+                    'price': current_price,
+                    'change': change,
+                    'change_percent': change_percent,
+                    'previous_close': previous_close
+                }
+                
+                # Update UI
+                def update_ui():
+                    change_symbol = "▲" if change >= 0 else "▼"
+                    change_color = "green" if change >= 0 else "red"
+                    
+                    info_text = f"{stock_name} ({ticker})\n"
+                    info_text += f"Price: ${current_price:.2f}\n"
+                    info_text += f"Change: {change_symbol} ${abs(change):.2f} ({change_percent:+.2f}%)"
+                    
+                    self.stock_info_label.config(text=info_text, foreground=change_color)
+                    self.send_stock_btn.config(state=tk.NORMAL)
+                    
+                    # Auto-update color if enabled
+                    if self.stock_auto_color_var.get():
+                        color = "#00FF00" if change >= 0 else "#FF0000"
+                        self.stock_text_color = color
+                        self.stock_color_canvas.config(bg=color)
+                
+                self.root.after(0, update_ui)
+                
+            except ImportError:
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Missing Library", 
+                    "yfinance library not installed.\n\nInstall with: pip install yfinance"))
+            except Exception as e:
+                error_msg = str(e)
+                self.root.after(0, lambda: self.stock_info_label.config(
+                    text=f"Error: {error_msg}", foreground="red"))
+        
+        threading.Thread(target=fetch_task, daemon=True).start()
+    
+    def send_stock_to_display(self):
+        """Send stock data to the LED display"""
+        if not self.is_connected:
+            messagebox.showwarning("Not Connected", "Please connect to a device first")
+            return
+        
+        if not self.current_stock_data:
+            messagebox.showwarning("No Data", "Please fetch stock data first")
+            return
+        
+        # Format text based on selected format
+        format_type = self.stock_format_var.get()
+        stock = self.current_stock_data
+        
+        # Format price to max 7 characters
+        price_str = self.format_stock_price(stock['price'])
+        
+        if format_type == "price_change":
+            change_symbol = "↑" if stock['change'] >= 0 else "↓"
+            text = f"{price_str} {change_symbol}{abs(stock['change_percent']):.1f}%"
+        elif format_type == "price_only":
+            text = price_str
+        else:  # ticker_price
+            text = f"{stock['ticker']} {price_str}"
+        
+        # Send to display
+        def send_task():
+            try:
+                text_color = self.stock_text_color.lstrip('#')
+                bg_color = self.stock_bg_color.lstrip('#')
+                
+                # Invert speed: 1=slowest (100), 100=fastest (1)
+                speed = 101 - self.stock_speed_var.get()
+                
+                result = self.client.send_text(
+                    text,
+                    char_height=16,
+                    color=text_color,
+                    bg_color=bg_color,
+                    animation=self.stock_animation_var.get(),
+                    speed=speed,
+                    rainbow_mode=0
+                )
+                
+                if asyncio.iscoroutine(result):
+                    self.run_async(result)
+                
+                # Schedule auto-refresh if enabled
+                if self.stock_auto_refresh_var.get():
+                    def auto_refresh():
+                        self.fetch_stock_data()
+                        # Wait a bit for data to be fetched, then send
+                        self.root.after(2000, self.send_stock_to_display)
+                    
+                    # Cancel previous job if exists
+                    if self.stock_refresh_job:
+                        self.root.after_cancel(self.stock_refresh_job)
+                    
+                    interval_ms = self.stock_refresh_interval_var.get() * 1000
+                    self.stock_refresh_job = self.root.after(interval_ms, auto_refresh)
+                
+            except Exception as e:
+                error_msg = str(e)
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to send: {error_msg}"))
+        
+        threading.Thread(target=send_task, daemon=True).start()
+    
+    def save_stock_preset(self):
+        """Save current stock configuration as a preset"""
+        # Ask for preset name
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Save Stock Preset")
+        dialog.geometry("400x120")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        ttk.Label(dialog, text="Preset Name:").pack(pady=(20, 5))
+        name_entry = ttk.Entry(dialog, width=40)
+        name_entry.pack(pady=(0, 10))
+        name_entry.insert(0, f"Stock - {self.stock_ticker_var.get()}")
+        name_entry.focus()
+        name_entry.select_range(0, tk.END)
+        
+        def save():
+            name = name_entry.get().strip()
+            if not name:
+                messagebox.showwarning("No Name", "Please enter a preset name")
+                return
+            
+            preset = {
+                "name": name,
+                "type": "stock",
+                "ticker": self.stock_ticker_var.get(),
+                "format": self.stock_format_var.get(),
+                "text_color": self.stock_text_color,
+                "bg_color": self.stock_bg_color,
+                "animation": self.stock_animation_var.get(),
+                "speed": self.stock_speed_var.get(),
+                "auto_color": self.stock_auto_color_var.get(),
+                "auto_refresh": self.stock_auto_refresh_var.get(),
+                "refresh_interval": self.stock_refresh_interval_var.get()
+            }
+            
+            self.presets.append(preset)
+            self.save_presets()
+            self.refresh_preset_buttons()
+            dialog.destroy()
+        
+        ttk.Button(dialog, text="Save", command=save).pack(pady=10)
+    
+    def create_youtube_tab(self):
+        """Create the YouTube stats display tab"""
+        youtube_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(youtube_frame, text="📺 YouTube")
+        
+        youtube_frame.columnconfigure(1, weight=1)
+        
+        # Info
+        info_label = ttk.Label(youtube_frame, 
+                              text="Display YouTube channel statistics on your LED panel",
+                              font=('TkDefaultFont', 9, 'italic'))
+        info_label.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
+        
+        # API Key setup
+        api_frame = ttk.LabelFrame(youtube_frame, text="⚙️ API Setup", padding="10")
+        api_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Label(api_frame, text="YouTube API Key:", font=('TkDefaultFont', 9, 'bold')).pack(anchor=tk.W)
+        ttk.Label(api_frame, text="Get free API key from: https://console.cloud.google.com/apis/credentials", 
+                 foreground="blue", font=('TkDefaultFont', 8)).pack(anchor=tk.W, pady=(0, 5))
+        
+        key_entry_frame = ttk.Frame(api_frame)
+        key_entry_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        self.youtube_api_key_var = tk.StringVar()
+        ttk.Entry(key_entry_frame, textvariable=self.youtube_api_key_var, width=50, show="*").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(key_entry_frame, text="Save Key", command=self.save_youtube_api_key).pack(side=tk.LEFT)
+        
+        # Channel input
+        ttk.Label(youtube_frame, text="Channel ID/Handle:").grid(row=2, column=0, sticky=tk.W, pady=(0, 5))
+        
+        channel_frame = ttk.Frame(youtube_frame)
+        channel_frame.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=(0, 5))
+        
+        self.youtube_channel_var = tk.StringVar(value="@MrBeast")
+        ttk.Entry(channel_frame, textvariable=self.youtube_channel_var, width=30).grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
+        
+        ttk.Label(channel_frame, text="(e.g., @MrBeast or UCX6OQ3DkcsbYNE6H8uQQuVA)", 
+                 foreground="gray", font=('TkDefaultFont', 8)).grid(row=0, column=1, sticky=tk.W)
+        
+        # Display format
+        ttk.Label(youtube_frame, text="Display Format:").grid(row=3, column=0, sticky=tk.W, pady=(10, 5))
+        
+        self.youtube_format_var = tk.StringVar(value="subs_views")
+        format_frame = ttk.Frame(youtube_frame)
+        format_frame.grid(row=3, column=1, sticky=tk.W, pady=(10, 5))
+        
+        ttk.Radiobutton(format_frame, text="Subscribers + Views", 
+                       variable=self.youtube_format_var, value="subs_views").pack(anchor=tk.W)
+        ttk.Radiobutton(format_frame, text="Subscribers Only", 
+                       variable=self.youtube_format_var, value="subs_only").pack(anchor=tk.W)
+        ttk.Radiobutton(format_frame, text="Channel + Subscribers", 
+                       variable=self.youtube_format_var, value="channel_subs").pack(anchor=tk.W)
+        ttk.Radiobutton(format_frame, text="Latest Video Views", 
+                       variable=self.youtube_format_var, value="latest_views").pack(anchor=tk.W)
+        
+        # Colors
+        ttk.Label(youtube_frame, text="Text Color:").grid(row=4, column=0, sticky=tk.W, pady=(10, 5))
+        
+        yt_color_frame = ttk.Frame(youtube_frame)
+        yt_color_frame.grid(row=4, column=1, sticky=tk.W, pady=(10, 5))
+        
+        self.youtube_text_color = "#FF0000"
+        self.youtube_color_canvas = tk.Canvas(yt_color_frame, width=30, height=20, 
+                                             bg=self.youtube_text_color, relief=tk.SUNKEN)
+        self.youtube_color_canvas.pack(side=tk.LEFT, padx=(0, 5))
+        
+        ttk.Button(yt_color_frame, text="Choose", command=self.choose_youtube_color).pack(side=tk.LEFT)
+        
+        # Background
+        ttk.Label(youtube_frame, text="Background:").grid(row=5, column=0, sticky=tk.W, pady=(0, 5))
+        
+        yt_bg_frame = ttk.Frame(youtube_frame)
+        yt_bg_frame.grid(row=5, column=1, sticky=tk.W, pady=(0, 5))
+        
+        self.youtube_bg_color = "#000000"
+        self.youtube_bg_canvas = tk.Canvas(yt_bg_frame, width=30, height=20, 
+                                          bg=self.youtube_bg_color, relief=tk.SUNKEN)
+        self.youtube_bg_canvas.pack(side=tk.LEFT, padx=(0, 5))
+        
+        ttk.Button(yt_bg_frame, text="Choose", command=self.choose_youtube_bg_color).pack(side=tk.LEFT)
+        
+        # Animation
+        ttk.Label(youtube_frame, text="Animation:").grid(row=6, column=0, sticky=tk.W, pady=(10, 5))
+        
+        self.youtube_animation_var = tk.IntVar(value=1)
+        yt_anim_frame = ttk.Frame(youtube_frame)
+        yt_anim_frame.grid(row=6, column=1, sticky=tk.W, pady=(10, 5))
+        
+        for text, value in [("Static", 0), ("Scroll Left", 1), ("Scroll Right", 2)]:
+            ttk.Radiobutton(yt_anim_frame, text=text, variable=self.youtube_animation_var, 
+                          value=value).pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Speed
+        ttk.Label(youtube_frame, text="Scroll Speed:").grid(row=7, column=0, sticky=tk.W, pady=(0, 5))
+        
+        self.youtube_speed_var = tk.IntVar(value=30)
+        yt_speed_frame = ttk.Frame(youtube_frame)
+        yt_speed_frame.grid(row=7, column=1, sticky=(tk.W, tk.E), pady=(0, 5))
+        
+        ttk.Scale(yt_speed_frame, from_=1, to=100, variable=self.youtube_speed_var, 
+                 orient=tk.HORIZONTAL, length=200).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(yt_speed_frame, textvariable=self.youtube_speed_var).pack(side=tk.LEFT)
+        
+        # Auto-refresh
+        ttk.Label(youtube_frame, text="Auto Refresh:").grid(row=8, column=0, sticky=tk.W, pady=(10, 5))
+        
+        yt_refresh_frame = ttk.Frame(youtube_frame)
+        yt_refresh_frame.grid(row=8, column=1, sticky=tk.W, pady=(10, 5))
+        
+        self.youtube_auto_refresh_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(yt_refresh_frame, text="Enable auto-refresh every", 
+                       variable=self.youtube_auto_refresh_var).pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.youtube_refresh_interval_var = tk.IntVar(value=300)
+        ttk.Spinbox(yt_refresh_frame, from_=60, to=3600, increment=60, 
+                   textvariable=self.youtube_refresh_interval_var, width=5).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(yt_refresh_frame, text="seconds").pack(side=tk.LEFT)
+        
+        # Stats display
+        self.youtube_info_frame = ttk.LabelFrame(youtube_frame, text="Channel Statistics", padding="10")
+        self.youtube_info_frame.grid(row=9, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(15, 10))
+        
+        self.youtube_info_label = ttk.Label(self.youtube_info_frame, text="Fetch channel data to see statistics", 
+                                           foreground="gray")
+        self.youtube_info_label.pack()
+        
+        # Buttons
+        yt_btn_frame = ttk.Frame(youtube_frame)
+        yt_btn_frame.grid(row=10, column=0, columnspan=2, pady=(10, 0))
+        
+        ttk.Button(yt_btn_frame, text="📊 Fetch Stats", 
+                  command=self.fetch_youtube_stats).pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.send_youtube_btn = ttk.Button(yt_btn_frame, text="📤 Send to Display", 
+                                          command=self.send_youtube_to_display, state=tk.DISABLED)
+        self.send_youtube_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        ttk.Button(yt_btn_frame, text="💾 Save as Preset", 
+                  command=self.save_youtube_preset).pack(side=tk.LEFT)
+        
+        # Store data
+        self.current_youtube_data = None
+        self.youtube_refresh_job = None
+        
+        # Load saved API key
+        self.load_youtube_api_key()
+    
+    def create_weather_tab(self):
+        """Create the weather display tab"""
+        weather_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(weather_frame, text="🌤️ Weather")
+        
+        weather_frame.columnconfigure(1, weight=1)
+        
+        # Info
+        info_label = ttk.Label(weather_frame, 
+                              text="Display current weather conditions on your LED panel",
+                              font=('TkDefaultFont', 9, 'italic'))
+        info_label.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
+        
+        # API Key setup
+        api_frame = ttk.LabelFrame(weather_frame, text="⚙️ API Setup", padding="10")
+        api_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Label(api_frame, text="OpenWeatherMap API Key:", font=('TkDefaultFont', 9, 'bold')).pack(anchor=tk.W)
+        ttk.Label(api_frame, text="Get free API key from: https://openweathermap.org/api", 
+                 foreground="blue", font=('TkDefaultFont', 8)).pack(anchor=tk.W, pady=(0, 5))
+        
+        weather_key_frame = ttk.Frame(api_frame)
+        weather_key_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        self.weather_api_key_var = tk.StringVar()
+        ttk.Entry(weather_key_frame, textvariable=self.weather_api_key_var, width=50, show="*").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(weather_key_frame, text="Save Key", command=self.save_weather_api_key).pack(side=tk.LEFT)
+        
+        # Location
+        ttk.Label(weather_frame, text="Location:").grid(row=2, column=0, sticky=tk.W, pady=(0, 5))
+        
+        location_frame = ttk.Frame(weather_frame)
+        location_frame.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=(0, 5))
+        
+        self.weather_location_var = tk.StringVar(value="London")
+        ttk.Entry(location_frame, textvariable=self.weather_location_var, width=30).grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
+        
+        ttk.Label(location_frame, text="(City name or Zip code)", 
+                 foreground="gray", font=('TkDefaultFont', 8)).grid(row=0, column=1, sticky=tk.W)
+        
+        # Temperature unit
+        ttk.Label(weather_frame, text="Temperature Unit:").grid(row=3, column=0, sticky=tk.W, pady=(10, 5))
+        
+        self.weather_unit_var = tk.StringVar(value="metric")
+        unit_frame = ttk.Frame(weather_frame)
+        unit_frame.grid(row=3, column=1, sticky=tk.W, pady=(10, 5))
+        
+        ttk.Radiobutton(unit_frame, text="Celsius (°C)", variable=self.weather_unit_var, value="metric").pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Radiobutton(unit_frame, text="Fahrenheit (°F)", variable=self.weather_unit_var, value="imperial").pack(side=tk.LEFT)
+        
+        # Display format
+        ttk.Label(weather_frame, text="Display Format:").grid(row=4, column=0, sticky=tk.W, pady=(10, 5))
+        
+        self.weather_format_var = tk.StringVar(value="temp_condition")
+        weather_fmt_frame = ttk.Frame(weather_frame)
+        weather_fmt_frame.grid(row=4, column=1, sticky=tk.W, pady=(10, 5))
+        
+        ttk.Radiobutton(weather_fmt_frame, text="Temp + Condition (23°C Sunny)", 
+                       variable=self.weather_format_var, value="temp_condition").pack(anchor=tk.W)
+        ttk.Radiobutton(weather_fmt_frame, text="Temp Only (23°C)", 
+                       variable=self.weather_format_var, value="temp_only").pack(anchor=tk.W)
+        ttk.Radiobutton(weather_fmt_frame, text="City + Temp (London 23°C)", 
+                       variable=self.weather_format_var, value="city_temp").pack(anchor=tk.W)
+        ttk.Radiobutton(weather_fmt_frame, text="Full (London 23°C Sunny)", 
+                       variable=self.weather_format_var, value="full").pack(anchor=tk.W)
+        
+        # Colors
+        ttk.Label(weather_frame, text="Text Color:").grid(row=5, column=0, sticky=tk.W, pady=(10, 5))
+        
+        weather_color_frame = ttk.Frame(weather_frame)
+        weather_color_frame.grid(row=5, column=1, sticky=tk.W, pady=(10, 5))
+        
+        self.weather_text_color = "#00FFFF"
+        self.weather_color_canvas = tk.Canvas(weather_color_frame, width=30, height=20, 
+                                             bg=self.weather_text_color, relief=tk.SUNKEN)
+        self.weather_color_canvas.pack(side=tk.LEFT, padx=(0, 5))
+        
+        ttk.Button(weather_color_frame, text="Choose", command=self.choose_weather_color).pack(side=tk.LEFT)
+        
+        # Background
+        ttk.Label(weather_frame, text="Background:").grid(row=6, column=0, sticky=tk.W, pady=(0, 5))
+        
+        weather_bg_frame = ttk.Frame(weather_frame)
+        weather_bg_frame.grid(row=6, column=1, sticky=tk.W, pady=(0, 5))
+        
+        self.weather_bg_color = "#000000"
+        self.weather_bg_canvas = tk.Canvas(weather_bg_frame, width=30, height=20, 
+                                          bg=self.weather_bg_color, relief=tk.SUNKEN)
+        self.weather_bg_canvas.pack(side=tk.LEFT, padx=(0, 5))
+        
+        ttk.Button(weather_bg_frame, text="Choose", command=self.choose_weather_bg_color).pack(side=tk.LEFT)
+        
+        # Animation
+        ttk.Label(weather_frame, text="Animation:").grid(row=7, column=0, sticky=tk.W, pady=(10, 5))
+        
+        self.weather_animation_var = tk.IntVar(value=1)
+        weather_anim_frame = ttk.Frame(weather_frame)
+        weather_anim_frame.grid(row=7, column=1, sticky=tk.W, pady=(10, 5))
+        
+        for text, value in [("Static", 0), ("Scroll Left", 1), ("Scroll Right", 2)]:
+            ttk.Radiobutton(weather_anim_frame, text=text, variable=self.weather_animation_var, 
+                          value=value).pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Speed
+        ttk.Label(weather_frame, text="Scroll Speed:").grid(row=8, column=0, sticky=tk.W, pady=(0, 5))
+        
+        self.weather_speed_var = tk.IntVar(value=30)
+        weather_speed_frame = ttk.Frame(weather_frame)
+        weather_speed_frame.grid(row=8, column=1, sticky=(tk.W, tk.E), pady=(0, 5))
+        
+        ttk.Scale(weather_speed_frame, from_=1, to=100, variable=self.weather_speed_var, 
+                 orient=tk.HORIZONTAL, length=200).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(weather_speed_frame, textvariable=self.weather_speed_var).pack(side=tk.LEFT)
+        
+        # Auto-refresh
+        ttk.Label(weather_frame, text="Auto Refresh:").grid(row=9, column=0, sticky=tk.W, pady=(10, 5))
+        
+        weather_refresh_frame = ttk.Frame(weather_frame)
+        weather_refresh_frame.grid(row=9, column=1, sticky=tk.W, pady=(10, 5))
+        
+        self.weather_auto_refresh_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(weather_refresh_frame, text="Enable auto-refresh every", 
+                       variable=self.weather_auto_refresh_var).pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.weather_refresh_interval_var = tk.IntVar(value=600)
+        ttk.Spinbox(weather_refresh_frame, from_=300, to=3600, increment=300, 
+                   textvariable=self.weather_refresh_interval_var, width=5).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(weather_refresh_frame, text="seconds").pack(side=tk.LEFT)
+        
+        # Weather info display
+        self.weather_info_frame = ttk.LabelFrame(weather_frame, text="Current Weather", padding="10")
+        self.weather_info_frame.grid(row=10, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(15, 10))
+        
+        self.weather_info_label = ttk.Label(self.weather_info_frame, text="Fetch weather data to see conditions", 
+                                           foreground="gray")
+        self.weather_info_label.pack()
+        
+        # Buttons
+        weather_btn_frame = ttk.Frame(weather_frame)
+        weather_btn_frame.grid(row=11, column=0, columnspan=2, pady=(10, 0))
+        
+        ttk.Button(weather_btn_frame, text="🌤️ Fetch Weather", 
+                  command=self.fetch_weather_data).pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.send_weather_btn = ttk.Button(weather_btn_frame, text="📤 Send to Display", 
+                                          command=self.send_weather_to_display, state=tk.DISABLED)
+        self.send_weather_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        ttk.Button(weather_btn_frame, text="💾 Save as Preset", 
+                  command=self.save_weather_preset).pack(side=tk.LEFT)
+        
+        # Store data
+        self.current_weather_data = None
+        self.weather_refresh_job = None
+        
+        # Load saved API key
+        self.load_weather_api_key()
+    
+    def create_animations_tab(self):
+        """Create the pixel art animations tab"""
+        anim_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(anim_frame, text="🎨 Animations")
+        
+        anim_frame.columnconfigure(1, weight=1)
+        
+        # Info
+        info_label = ttk.Label(anim_frame, 
+                              text="Display animated pixel art effects on your LED panel",
+                              font=('TkDefaultFont', 9, 'italic'))
+        info_label.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
+        
+        # Animation type
+        ttk.Label(anim_frame, text="Animation Type:").grid(row=1, column=0, sticky=tk.W, pady=(0, 5))
+        
+        self.anim_type_var = tk.StringVar(value="game_of_life")
+        type_frame = ttk.Frame(anim_frame)
+        type_frame.grid(row=1, column=1, sticky=tk.W, pady=(0, 5))
+        
+        ttk.Radiobutton(type_frame, text="Conway's Game of Life", 
+                       variable=self.anim_type_var, value="game_of_life",
+                       command=self.update_anim_options).pack(anchor=tk.W)
+        ttk.Radiobutton(type_frame, text="Matrix Rain", 
+                       variable=self.anim_type_var, value="matrix",
+                       command=self.update_anim_options).pack(anchor=tk.W)
+        ttk.Radiobutton(type_frame, text="Fire Effect", 
+                       variable=self.anim_type_var, value="fire",
+                       command=self.update_anim_options).pack(anchor=tk.W)
+        ttk.Radiobutton(type_frame, text="Starfield", 
+                       variable=self.anim_type_var, value="starfield",
+                       command=self.update_anim_options).pack(anchor=tk.W)
+        ttk.Radiobutton(type_frame, text="Plasma", 
+                       variable=self.anim_type_var, value="plasma",
+                       command=self.update_anim_options).pack(anchor=tk.W)
+        
+        # Color scheme
+        ttk.Label(anim_frame, text="Color Scheme:").grid(row=2, column=0, sticky=tk.W, pady=(10, 5))
+        
+        self.anim_color_scheme_var = tk.StringVar(value="green")
+        color_frame = ttk.Frame(anim_frame)
+        color_frame.grid(row=2, column=1, sticky=tk.W, pady=(10, 5))
+        
+        schemes = [("Green (Matrix)", "green"), ("Blue", "blue"), ("Red (Fire)", "red"), 
+                  ("Rainbow", "rainbow"), ("White", "white")]
+        for text, value in schemes:
+            ttk.Radiobutton(color_frame, text=text, variable=self.anim_color_scheme_var, 
+                          value=value).pack(anchor=tk.W)
+        
+        # Speed/FPS
+        ttk.Label(anim_frame, text="Animation Speed:").grid(row=3, column=0, sticky=tk.W, pady=(10, 5))
+        
+        self.anim_speed_var = tk.IntVar(value=10)
+        anim_speed_frame = ttk.Frame(anim_frame)
+        anim_speed_frame.grid(row=3, column=1, sticky=(tk.W, tk.E), pady=(10, 5))
+        
+        ttk.Scale(anim_speed_frame, from_=1, to=30, variable=self.anim_speed_var, 
+                 orient=tk.HORIZONTAL, length=200).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(anim_speed_frame, textvariable=self.anim_speed_var).pack(side=tk.LEFT)
+        ttk.Label(anim_speed_frame, text="FPS").pack(side=tk.LEFT, padx=(5, 0))
+        
+        # Duration
+        ttk.Label(anim_frame, text="Duration:").grid(row=4, column=0, sticky=tk.W, pady=(0, 5))
+        
+        duration_frame = ttk.Frame(anim_frame)
+        duration_frame.grid(row=4, column=1, sticky=tk.W, pady=(0, 5))
+        
+        self.anim_duration_var = tk.IntVar(value=60)
+        ttk.Spinbox(duration_frame, from_=10, to=300, increment=10, 
+                   textvariable=self.anim_duration_var, width=5).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(duration_frame, text="seconds (0 = infinite)").pack(side=tk.LEFT)
+        
+        # Game of Life specific options
+        self.gol_options_frame = ttk.LabelFrame(anim_frame, text="Game of Life Options", padding="10")
+        self.gol_options_frame.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 5))
+        
+        ttk.Label(self.gol_options_frame, text="Initial Density:").pack(anchor=tk.W)
+        self.gol_density_var = tk.IntVar(value=30)
+        density_frame = ttk.Frame(self.gol_options_frame)
+        density_frame.pack(fill=tk.X)
+        
+        ttk.Scale(density_frame, from_=10, to=50, variable=self.gol_density_var, 
+                 orient=tk.HORIZONTAL, length=200).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(density_frame, textvariable=self.gol_density_var).pack(side=tk.LEFT)
+        ttk.Label(density_frame, text="%").pack(side=tk.LEFT, padx=(2, 0))
+        
+        # Preview
+        preview_frame = ttk.LabelFrame(anim_frame, text="Preview", padding="10")
+        preview_frame.grid(row=6, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 5))
+        anim_frame.rowconfigure(6, weight=1)
+        
+        self.anim_preview_label = ttk.Label(preview_frame, text="Animation will be generated when sent to display", 
+                                           foreground="gray")
+        self.anim_preview_label.pack()
+        
+        # Buttons
+        anim_btn_frame = ttk.Frame(anim_frame)
+        anim_btn_frame.grid(row=7, column=0, columnspan=2, pady=(10, 0))
+        
+        self.send_anim_btn = ttk.Button(anim_btn_frame, text="▶️ Start Animation", 
+                                        command=self.send_animation_to_display, state=tk.NORMAL if self.is_connected else tk.DISABLED)
+        self.send_anim_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.stop_anim_btn = ttk.Button(anim_btn_frame, text="⏹️ Stop Animation", 
+                                       command=self.stop_animation, state=tk.DISABLED)
+        self.stop_anim_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        ttk.Button(anim_btn_frame, text="💾 Save as Preset", 
+                  command=self.save_animation_preset).pack(side=tk.LEFT)
+        
+        # Store state
+        self.animation_running = False
+        self.animation_timer = None
+        
+        # Update initial visibility
+        self.update_anim_options()
+    
+    # ===== YouTube Methods =====
+    def save_youtube_api_key(self):
+        """Save YouTube API key to settings"""
+        api_key = self.youtube_api_key_var.get().strip()
+        if api_key:
+            self.settings['youtube_api_key'] = api_key
+            self.save_settings()
+            messagebox.showinfo("Success", "YouTube API key saved")
+    
+    def load_youtube_api_key(self):
+        """Load YouTube API key from settings"""
+        api_key = self.settings.get('youtube_api_key', '')
+        self.youtube_api_key_var.set(api_key)
+    
+    def choose_youtube_color(self):
+        """Choose text color for YouTube display"""
+        color = colorchooser.askcolor(initialcolor=self.youtube_text_color, title="Choose Text Color")
+        if color[1]:
+            self.youtube_text_color = color[1]
+            self.youtube_color_canvas.config(bg=self.youtube_text_color)
+    
+    def choose_youtube_bg_color(self):
+        """Choose background color for YouTube display"""
+        color = colorchooser.askcolor(initialcolor=self.youtube_bg_color, title="Choose Background Color")
+        if color[1]:
+            self.youtube_bg_color = color[1]
+            self.youtube_bg_canvas.config(bg=self.youtube_bg_color)
+    
+    def fetch_youtube_stats(self):
+        """Fetch YouTube channel statistics"""
+        channel_input = self.youtube_channel_var.get().strip()
+        api_key = self.youtube_api_key_var.get().strip()
+        
+        if not api_key:
+            messagebox.showwarning("No API Key", "Please enter your YouTube API key first")
+            return
+        
+        if not channel_input:
+            messagebox.showwarning("No Channel", "Please enter a channel ID or handle")
+            return
+        
+        self.youtube_info_label.config(text=f"Fetching data for {channel_input}...", foreground="blue")
+        
+        def fetch_task():
+            try:
+                from googleapiclient.discovery import build
+                
+                youtube = build('youtube', 'v3', developerKey=api_key)
+                
+                # Handle both @handle and channel ID formats
+                if channel_input.startswith('@'):
+                    # Search for channel by handle
+                    search_response = youtube.search().list(
+                        q=channel_input,
+                        type='channel',
+                        part='id',
+                        maxResults=1
+                    ).execute()
+                    
+                    if not search_response.get('items'):
+                        self.root.after(0, lambda: self.youtube_info_label.config(
+                            text=f"Channel not found: {channel_input}", foreground="red"))
+                        return
+                    
+                    channel_id = search_response['items'][0]['id']['channelId']
+                else:
+                    channel_id = channel_input
+                
+                # Get channel statistics
+                channel_response = youtube.channels().list(
+                    part='statistics,snippet',
+                    id=channel_id
+                ).execute()
+                
+                if not channel_response.get('items'):
+                    self.root.after(0, lambda: self.youtube_info_label.config(
+                        text=f"Channel not found: {channel_input}", foreground="red"))
+                    return
+                
+                channel_data = channel_response['items'][0]
+                stats = channel_data['statistics']
+                snippet = channel_data['snippet']
+                
+                channel_title = snippet['title']
+                subscribers = int(stats.get('subscriberCount', 0))
+                views = int(stats.get('viewCount', 0))
+                videos = int(stats.get('videoCount', 0))
+                
+                # Get latest video if requested
+                latest_video_views = 0
+                if self.youtube_format_var.get() == "latest_views":
+                    videos_response = youtube.search().list(
+                        channelId=channel_id,
+                        part='id',
+                        order='date',
+                        maxResults=1,
+                        type='video'
+                    ).execute()
+                    
+                    if videos_response.get('items'):
+                        video_id = videos_response['items'][0]['id']['videoId']
+                        video_response = youtube.videos().list(
+                            part='statistics',
+                            id=video_id
+                        ).execute()
+                        
+                        if video_response.get('items'):
+                            latest_video_views = int(video_response['items'][0]['statistics'].get('viewCount', 0))
+                
+                self.current_youtube_data = {
+                    'channel_title': channel_title,
+                    'subscribers': subscribers,
+                    'views': views,
+                    'videos': videos,
+                    'latest_video_views': latest_video_views
+                }
+                
+                def update_ui():
+                    info_text = f"{channel_title}\n"
+                    info_text += f"Subscribers: {subscribers:,}\n"
+                    info_text += f"Total Views: {views:,}\n"
+                    info_text += f"Videos: {videos:,}"
+                    
+                    if latest_video_views > 0:
+                        info_text += f"\nLatest Video: {latest_video_views:,} views"
+                    
+                    self.youtube_info_label.config(text=info_text, foreground="green")
+                    self.send_youtube_btn.config(state=tk.NORMAL)
+                
+                self.root.after(0, update_ui)
+                
+            except ImportError:
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Missing Library", 
+                    "Google API library not installed.\n\nInstall with: pip install google-api-python-client"))
+            except Exception as e:
+                error_msg = str(e)
+                self.root.after(0, lambda: self.youtube_info_label.config(
+                    text=f"Error: {error_msg}", foreground="red"))
+        
+        threading.Thread(target=fetch_task, daemon=True).start()
+    
+    def format_number(self, num):
+        """Format large numbers with K/M/B suffixes"""
+        if num >= 1_000_000_000:
+            return f"{num/1_000_000_000:.1f}B"
+        elif num >= 1_000_000:
+            return f"{num/1_000_000:.1f}M"
+        elif num >= 1_000:
+            return f"{num/1_000:.1f}K"
+        return str(num)
+    
+    def send_youtube_to_display(self):
+        """Send YouTube stats to the LED display"""
+        if not self.is_connected:
+            messagebox.showwarning("Not Connected", "Please connect to a device first")
+            return
+        
+        if not self.current_youtube_data:
+            messagebox.showwarning("No Data", "Please fetch YouTube data first")
+            return
+        
+        format_type = self.youtube_format_var.get()
+        data = self.current_youtube_data
+        
+        if format_type == "subs_views":
+            text = f"{self.format_number(data['subscribers'])} subs {self.format_number(data['views'])} views"
+        elif format_type == "subs_only":
+            text = f"{self.format_number(data['subscribers'])} subscribers"
+        elif format_type == "channel_subs":
+            text = f"{data['channel_title']} {self.format_number(data['subscribers'])}"
+        else:  # latest_views
+            text = f"Latest: {self.format_number(data['latest_video_views'])} views"
+        
+        def send_task():
+            try:
+                text_color = self.youtube_text_color.lstrip('#')
+                bg_color = self.youtube_bg_color.lstrip('#')
+                speed = 101 - self.youtube_speed_var.get()
+                
+                result = self.client.send_text(
+                    text,
+                    char_height=16,
+                    color=text_color,
+                    bg_color=bg_color,
+                    animation=self.youtube_animation_var.get(),
+                    speed=speed,
+                    rainbow_mode=0
+                )
+                
+                if asyncio.iscoroutine(result):
+                    self.run_async(result)
+                
+                if self.youtube_auto_refresh_var.get():
+                    def auto_refresh():
+                        self.fetch_youtube_stats()
+                        self.root.after(2000, self.send_youtube_to_display)
+                    
+                    if self.youtube_refresh_job:
+                        self.root.after_cancel(self.youtube_refresh_job)
+                    
+                    interval_ms = self.youtube_refresh_interval_var.get() * 1000
+                    self.youtube_refresh_job = self.root.after(interval_ms, auto_refresh)
+                
+            except Exception as e:
+                error_msg = str(e)
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to send: {error_msg}"))
+        
+        threading.Thread(target=send_task, daemon=True).start()
+    
+    def save_youtube_preset(self):
+        """Save YouTube configuration as preset"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Save YouTube Preset")
+        dialog.geometry("400x120")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        ttk.Label(dialog, text="Preset Name:").pack(pady=(20, 5))
+        name_entry = ttk.Entry(dialog, width=40)
+        name_entry.pack(pady=(0, 10))
+        name_entry.insert(0, f"YouTube - {self.youtube_channel_var.get()}")
+        name_entry.focus()
+        name_entry.select_range(0, tk.END)
+        
+        def save():
+            name = name_entry.get().strip()
+            if not name:
+                messagebox.showwarning("No Name", "Please enter a preset name")
+                return
+            
+            preset = {
+                "name": name,
+                "type": "youtube",
+                "channel": self.youtube_channel_var.get(),
+                "format": self.youtube_format_var.get(),
+                "text_color": self.youtube_text_color,
+                "bg_color": self.youtube_bg_color,
+                "animation": self.youtube_animation_var.get(),
+                "speed": self.youtube_speed_var.get(),
+                "auto_refresh": self.youtube_auto_refresh_var.get(),
+                "refresh_interval": self.youtube_refresh_interval_var.get()
+            }
+            
+            self.presets.append(preset)
+            self.save_presets()
+            self.refresh_preset_buttons()
+            dialog.destroy()
+        
+        ttk.Button(dialog, text="Save", command=save).pack(pady=10)
+    
+    # ===== Weather Methods =====
+    def save_weather_api_key(self):
+        """Save weather API key to settings"""
+        api_key = self.weather_api_key_var.get().strip()
+        if api_key:
+            self.settings['weather_api_key'] = api_key
+            self.save_settings()
+            messagebox.showinfo("Success", "Weather API key saved")
+    
+    def load_weather_api_key(self):
+        """Load weather API key from settings"""
+        api_key = self.settings.get('weather_api_key', '')
+        self.weather_api_key_var.set(api_key)
+    
+    def choose_weather_color(self):
+        """Choose text color for weather display"""
+        color = colorchooser.askcolor(initialcolor=self.weather_text_color, title="Choose Text Color")
+        if color[1]:
+            self.weather_text_color = color[1]
+            self.weather_color_canvas.config(bg=self.weather_text_color)
+    
+    def choose_weather_bg_color(self):
+        """Choose background color for weather display"""
+        color = colorchooser.askcolor(initialcolor=self.weather_bg_color, title="Choose Background Color")
+        if color[1]:
+            self.weather_bg_color = color[1]
+            self.weather_bg_canvas.config(bg=self.weather_bg_color)
+    
+    def fetch_weather_data(self):
+        """Fetch current weather data"""
+        location = self.weather_location_var.get().strip()
+        api_key = self.weather_api_key_var.get().strip()
+        
+        if not api_key:
+            messagebox.showwarning("No API Key", "Please enter your OpenWeatherMap API key first")
+            return
+        
+        if not location:
+            messagebox.showwarning("No Location", "Please enter a location")
+            return
+        
+        self.weather_info_label.config(text=f"Fetching weather for {location}...", foreground="blue")
+        
+        def fetch_task():
+            try:
+                import requests
+                
+                unit = self.weather_unit_var.get()
+                url = f"https://api.openweathermap.org/data/2.5/weather?q={location}&appid={api_key}&units={unit}"
+                
+                response = requests.get(url, timeout=10)
+                
+                if response.status_code != 200:
+                    self.root.after(0, lambda: self.weather_info_label.config(
+                        text=f"Error: {response.json().get('message', 'Unknown error')}", foreground="red"))
+                    return
+                
+                data = response.json()
+                
+                temp = data['main']['temp']
+                feels_like = data['main']['feels_like']
+                condition = data['weather'][0]['main']
+                description = data['weather'][0]['description']
+                humidity = data['main']['humidity']
+                wind_speed = data['wind']['speed']
+                city_name = data['name']
+                
+                unit_symbol = "°C" if unit == "metric" else "°F"
+                
+                self.current_weather_data = {
+                    'city': city_name,
+                    'temp': temp,
+                    'feels_like': feels_like,
+                    'condition': condition,
+                    'description': description,
+                    'humidity': humidity,
+                    'wind_speed': wind_speed,
+                    'unit': unit_symbol
+                }
+                
+                def update_ui():
+                    info_text = f"{city_name}\n"
+                    info_text += f"Temperature: {temp:.1f}{unit_symbol}\n"
+                    info_text += f"Feels like: {feels_like:.1f}{unit_symbol}\n"
+                    info_text += f"Condition: {description.title()}\n"
+                    info_text += f"Humidity: {humidity}%"
+                    
+                    self.weather_info_label.config(text=info_text, foreground="green")
+                    self.send_weather_btn.config(state=tk.NORMAL)
+                
+                self.root.after(0, update_ui)
+                
+            except ImportError:
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Missing Library", 
+                    "requests library not installed.\n\nInstall with: pip install requests"))
+            except Exception as e:
+                error_msg = str(e)
+                self.root.after(0, lambda: self.weather_info_label.config(
+                    text=f"Error: {error_msg}", foreground="red"))
+        
+        threading.Thread(target=fetch_task, daemon=True).start()
+    
+    def send_weather_to_display(self):
+        """Send weather data to the LED display"""
+        if not self.is_connected:
+            messagebox.showwarning("Not Connected", "Please connect to a device first")
+            return
+        
+        if not self.current_weather_data:
+            messagebox.showwarning("No Data", "Please fetch weather data first")
+            return
+        
+        format_type = self.weather_format_var.get()
+        data = self.current_weather_data
+        
+        if format_type == "temp_condition":
+            text = f"{data['temp']:.0f}{data['unit']} {data['condition']}"
+        elif format_type == "temp_only":
+            text = f"{data['temp']:.0f}{data['unit']}"
+        elif format_type == "city_temp":
+            text = f"{data['city']} {data['temp']:.0f}{data['unit']}"
+        else:  # full
+            text = f"{data['city']} {data['temp']:.0f}{data['unit']} {data['condition']}"
+        
+        def send_task():
+            try:
+                text_color = self.weather_text_color.lstrip('#')
+                bg_color = self.weather_bg_color.lstrip('#')
+                speed = 101 - self.weather_speed_var.get()
+                
+                result = self.client.send_text(
+                    text,
+                    char_height=16,
+                    color=text_color,
+                    bg_color=bg_color,
+                    animation=self.weather_animation_var.get(),
+                    speed=speed,
+                    rainbow_mode=0
+                )
+                
+                if asyncio.iscoroutine(result):
+                    self.run_async(result)
+                
+                if self.weather_auto_refresh_var.get():
+                    def auto_refresh():
+                        self.fetch_weather_data()
+                        self.root.after(2000, self.send_weather_to_display)
+                    
+                    if self.weather_refresh_job:
+                        self.root.after_cancel(self.weather_refresh_job)
+                    
+                    interval_ms = self.weather_refresh_interval_var.get() * 1000
+                    self.weather_refresh_job = self.root.after(interval_ms, auto_refresh)
+                
+            except Exception as e:
+                error_msg = str(e)
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to send: {error_msg}"))
+        
+        threading.Thread(target=send_task, daemon=True).start()
+    
+    def save_weather_preset(self):
+        """Save weather configuration as preset"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Save Weather Preset")
+        dialog.geometry("400x120")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        ttk.Label(dialog, text="Preset Name:").pack(pady=(20, 5))
+        name_entry = ttk.Entry(dialog, width=40)
+        name_entry.pack(pady=(0, 10))
+        name_entry.insert(0, f"Weather - {self.weather_location_var.get()}")
+        name_entry.focus()
+        name_entry.select_range(0, tk.END)
+        
+        def save():
+            name = name_entry.get().strip()
+            if not name:
+                messagebox.showwarning("No Name", "Please enter a preset name")
+                return
+            
+            preset = {
+                "name": name,
+                "type": "weather",
+                "location": self.weather_location_var.get(),
+                "unit": self.weather_unit_var.get(),
+                "format": self.weather_format_var.get(),
+                "text_color": self.weather_text_color,
+                "bg_color": self.weather_bg_color,
+                "animation": self.weather_animation_var.get(),
+                "speed": self.weather_speed_var.get(),
+                "auto_refresh": self.weather_auto_refresh_var.get(),
+                "refresh_interval": self.weather_refresh_interval_var.get()
+            }
+            
+            self.presets.append(preset)
+            self.save_presets()
+            self.refresh_preset_buttons()
+            dialog.destroy()
+        
+        ttk.Button(dialog, text="Save", command=save).pack(pady=10)
+    
+    # ===== Animation Methods =====
+    def update_anim_options(self):
+        """Update visibility of animation options"""
+        anim_type = self.anim_type_var.get()
+        
+        if anim_type == "game_of_life":
+            self.gol_options_frame.grid()
+        else:
+            self.gol_options_frame.grid_remove()
+    
+    def generate_game_of_life_frame(self, width=64, height=16, state=None):
+        """Generate one frame of Conway's Game of Life"""
+        import numpy as np
+        
+        if state is None:
+            # Initialize with random state
+            density = self.gol_density_var.get() / 100
+            state = np.random.random((height, width)) < density
+        
+        # Count neighbors
+        padded = np.pad(state, 1, mode='wrap')
+        neighbors = sum([
+            padded[0:-2, 0:-2], padded[0:-2, 1:-1], padded[0:-2, 2:],
+            padded[1:-1, 0:-2],                    padded[1:-1, 2:],
+            padded[2:,   0:-2], padded[2:,   1:-1], padded[2:,   2:]
+        ])
+        
+        # Apply rules
+        new_state = (neighbors == 3) | (state & (neighbors == 2))
+        
+        return new_state
+    
+    def generate_animation_frame(self, frame_num, width=64, height=16):
+        """Generate animation frame based on type"""
+        import numpy as np
+        
+        anim_type = self.anim_type_var.get()
+        color_scheme = self.anim_color_scheme_var.get()
+        
+        # Create RGB image
+        img = Image.new('RGB', (width, height), (0, 0, 0))
+        pixels = img.load()
+        
+        if anim_type == "game_of_life":
+            if not hasattr(self, 'gol_state') or frame_num == 0:
+                self.gol_state = self.generate_game_of_life_frame(width, height)
+            else:
+                self.gol_state = self.generate_game_of_life_frame(width, height, self.gol_state)
+            
+            # Apply color scheme
+            for y in range(height):
+                for x in range(width):
+                    if self.gol_state[y, x]:
+                        pixels[x, y] = self.get_color_for_scheme(color_scheme, frame_num, x, y)
+        
+        elif anim_type == "matrix":
+            # Matrix rain effect
+            if not hasattr(self, 'matrix_drops'):
+                self.matrix_drops = [np.random.randint(-height, 0) for _ in range(width)]
+            
+            for x in range(width):
+                self.matrix_drops[x] += 1
+                if self.matrix_drops[x] > height:
+                    self.matrix_drops[x] = np.random.randint(-height//2, 0)
+                
+                # Draw trail
+                for trail in range(5):
+                    y = self.matrix_drops[x] - trail
+                    if 0 <= y < height:
+                        brightness = max(0, 255 - trail * 50)
+                        pixels[x, y] = (0, brightness, 0) if color_scheme == "green" else (brightness, brightness, brightness)
+        
+        elif anim_type == "fire":
+            # Fire effect
+            if not hasattr(self, 'fire_buffer'):
+                self.fire_buffer = np.zeros((height, width))
+            
+            # Heat bottom row
+            self.fire_buffer[-1, :] = np.random.randint(200, 256, width)
+            
+            # Propagate and cool
+            for y in range(height-1):
+                for x in range(width):
+                    avg = (self.fire_buffer[y+1, (x-1)%width] + 
+                          self.fire_buffer[y+1, x] + 
+                          self.fire_buffer[y+1, (x+1)%width]) / 3
+                    self.fire_buffer[y, x] = max(0, avg - np.random.randint(0, 10))
+            
+            # Apply fire colors
+            for y in range(height):
+                for x in range(width):
+                    heat = int(self.fire_buffer[y, x])
+                    if heat < 85:
+                        pixels[x, y] = (heat * 3, 0, 0)
+                    elif heat < 170:
+                        pixels[x, y] = (255, (heat-85) * 3, 0)
+                    else:
+                        pixels[x, y] = (255, 255, (heat-170) * 3)
+        
+        elif anim_type == "starfield":
+            # Starfield effect
+            if not hasattr(self, 'stars'):
+                self.stars = [(np.random.randint(0, width), np.random.randint(0, height), 
+                              np.random.randint(1, 4)) for _ in range(30)]
+            
+            # Move stars
+            new_stars = []
+            for x, y, speed in self.stars:
+                x += speed
+                if x >= width:
+                    x = 0
+                    y = np.random.randint(0, height)
+                new_stars.append((x, y, speed))
+            self.stars = new_stars
+            
+            # Draw stars
+            for x, y, speed in self.stars:
+                brightness = 100 + speed * 50
+                pixels[x, y] = self.get_color_for_scheme(color_scheme, frame_num, x, y, brightness)
+        
+        elif anim_type == "plasma":
+            # Plasma effect
+            for y in range(height):
+                for x in range(width):
+                    v = np.sin(x / 4.0 + frame_num / 10.0) + np.sin(y / 3.0 + frame_num / 15.0)
+                    v = (v + 2) / 4 * 255
+                    pixels[x, y] = self.get_color_for_scheme(color_scheme, int(v), x, y)
+        
+        return img
+    
+    def get_color_for_scheme(self, scheme, frame_num, x=0, y=0, brightness=255):
+        """Get color based on scheme"""
+        if scheme == "green":
+            return (0, brightness, 0)
+        elif scheme == "blue":
+            return (0, 0, brightness)
+        elif scheme == "red":
+            return (brightness, 0, 0)
+        elif scheme == "white":
+            return (brightness, brightness, brightness)
+        elif scheme == "rainbow":
+            hue = (frame_num + x + y) % 360
+            import colorsys
+            rgb = colorsys.hsv_to_rgb(hue/360, 1.0, brightness/255)
+            return tuple(int(c * 255) for c in rgb)
+        return (brightness, brightness, brightness)
+    
+    def send_animation_to_display(self):
+        """Send animation to the LED display"""
+        if not self.is_connected:
+            messagebox.showwarning("Not Connected", "Please connect to a device first")
+            return
+        
+        self.animation_running = True
+        self.send_anim_btn.config(state=tk.DISABLED)
+        self.stop_anim_btn.config(state=tk.NORMAL)
+        
+        fps = self.anim_speed_var.get()
+        frame_delay = 1000 // fps  # ms per frame
+        duration = self.anim_duration_var.get()
+        total_frames = duration * fps if duration > 0 else 9999999
+        
+        frame_count = [0]  # Use list to make it mutable in nested function
+        
+        # Reset animation state
+        if hasattr(self, 'gol_state'):
+            del self.gol_state
+        if hasattr(self, 'matrix_drops'):
+            del self.matrix_drops
+        if hasattr(self, 'fire_buffer'):
+            del self.fire_buffer
+        if hasattr(self, 'stars'):
+            del self.stars
+        
+        def send_next_frame():
+            if not self.animation_running or frame_count[0] >= total_frames:
+                self.stop_animation()
+                return
+            
+            try:
+                # Generate frame
+                frame_img = self.generate_animation_frame(frame_count[0])
+                
+                # Save to temp file
+                temp_path = os.path.join(tempfile.gettempdir(), 'ipixel_anim_frame.png')
+                frame_img.save(temp_path, 'PNG')
+                
+                # Send to display synchronously to avoid overwhelming the device
+                def send_task():
+                    try:
+                        import time
+                        result = self.client.send_image(temp_path, resize_method='crop', save_slot=0)
+                        if asyncio.iscoroutine(result):
+                            self.run_async(result)
+                        # Small delay to ensure device has time to process
+                        time.sleep(0.05)  # 50ms delay between frames
+                    except Exception as e:
+                        print(f"Frame send error: {e}")
+                
+                # Send synchronously in thread and wait
+                thread = threading.Thread(target=send_task, daemon=True)
+                thread.start()
+                thread.join(timeout=2.0)  # Wait up to 2 seconds for send to complete
+                
+                frame_count[0] += 1
+                
+                # Schedule next frame
+                if self.animation_running:
+                    self.animation_timer = self.root.after(frame_delay, send_next_frame)
+                
+            except Exception as e:
+                print(f"Animation error: {e}")
+                self.stop_animation()
+        
+        # Start animation
+        send_next_frame()
+    
+    def stop_animation(self):
+        """Stop the running animation"""
+        self.animation_running = False
+        
+        if self.animation_timer:
+            self.root.after_cancel(self.animation_timer)
+            self.animation_timer = None
+        
+        self.send_anim_btn.config(state=tk.NORMAL if self.is_connected else tk.DISABLED)
+        self.stop_anim_btn.config(state=tk.DISABLED)
+    
+    def save_animation_preset(self):
+        """Save animation configuration as preset"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Save Animation Preset")
+        dialog.geometry("400x120")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        ttk.Label(dialog, text="Preset Name:").pack(pady=(20, 5))
+        name_entry = ttk.Entry(dialog, width=40)
+        name_entry.pack(pady=(0, 10))
+        name_entry.insert(0, f"Animation - {self.anim_type_var.get().replace('_', ' ').title()}")
+        name_entry.focus()
+        name_entry.select_range(0, tk.END)
+        
+        def save():
+            name = name_entry.get().strip()
+            if not name:
+                messagebox.showwarning("No Name", "Please enter a preset name")
+                return
+            
+            preset = {
+                "name": name,
+                "type": "animation",
+                "anim_type": self.anim_type_var.get(),
+                "color_scheme": self.anim_color_scheme_var.get(),
+                "speed": self.anim_speed_var.get(),
+                "duration": self.anim_duration_var.get(),
+                "gol_density": self.gol_density_var.get()
+            }
+            
+            self.presets.append(preset)
+            self.save_presets()
+            self.refresh_preset_buttons()
+            dialog.destroy()
+        
+        ttk.Button(dialog, text="Save", command=save).pack(pady=10)
+    
+    def create_settings_tab(self):
+        """Create the settings control tab"""
+        settings_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(settings_frame, text="Settings")
         
         # Brightness
         ttk.Label(settings_frame, text="Brightness:").grid(row=0, column=0, sticky=tk.W, pady=(0, 10))
@@ -832,6 +2354,12 @@ class iPixelController:
         self.set_brightness_btn.config(state=tk.NORMAL)
         self.power_on_btn.config(state=tk.NORMAL)
         self.power_off_btn.config(state=tk.NORMAL)
+        
+        # Enable new feature buttons
+        if hasattr(self, 'send_stock_btn'):
+            self.send_stock_btn.config(state=tk.NORMAL if hasattr(self, 'current_stock_data') and self.current_stock_data else tk.DISABLED)
+        if hasattr(self, 'send_anim_btn'):
+            self.send_anim_btn.config(state=tk.NORMAL)
     
     def _on_connection_error(self, error):
         """Called when connection fails"""
@@ -858,6 +2386,17 @@ class iPixelController:
         self.set_brightness_btn.config(state=tk.DISABLED)
         self.power_on_btn.config(state=tk.DISABLED)
         self.power_off_btn.config(state=tk.DISABLED)
+        
+        # Disable new feature buttons
+        if hasattr(self, 'send_stock_btn'):
+            self.send_stock_btn.config(state=tk.DISABLED)
+        if hasattr(self, 'send_youtube_btn'):
+            self.send_youtube_btn.config(state=tk.DISABLED)
+        if hasattr(self, 'send_weather_btn'):
+            self.send_weather_btn.config(state=tk.DISABLED)
+        if hasattr(self, 'send_anim_btn'):
+            self.send_anim_btn.config(state=tk.DISABLED)
+            self.stop_anim_btn.config(state=tk.DISABLED)
     
     def choose_text_color(self):
         """Choose text color"""
@@ -1666,6 +3205,27 @@ class iPixelController:
             return text[:15] if len(text) <= 15 else text[:12] + "..."
         elif preset_type == "image":
             return "🖼️ Image"
+        elif preset_type == "stock":
+            ticker = preset.get('ticker', 'STOCK')
+            return f"📈 {ticker}"
+        elif preset_type == "youtube":
+            channel = preset.get('channel', 'Channel')
+            if channel.startswith('@'):
+                return f"📺 {channel}"
+            return "📺 YouTube"
+        elif preset_type == "weather":
+            location = preset.get('location', 'Location')
+            return f"🌤️ {location}"
+        elif preset_type == "animation":
+            anim_type = preset.get('anim_type', 'animation')
+            anim_names = {
+                'game_of_life': '🎨 Life',
+                'matrix': '🎨 Matrix',
+                'fire': '🎨 Fire',
+                'starfield': '🎨 Stars',
+                'plasma': '🎨 Plasma'
+            }
+            return anim_names.get(anim_type, '🎨 Anim')
         elif preset_type == "clock":
             clock_mode = preset.get('clock_mode', 'builtin')
             if clock_mode == 'custom':
@@ -1694,6 +3254,45 @@ class iPixelController:
             path = preset.get('image_path', '')
             filename = os.path.basename(path) if path else "No file"
             return filename
+        elif preset_type == "stock":
+            ticker = preset.get('ticker', 'UNKNOWN')
+            format_type = preset.get('format', 'price_change')
+            format_names = {
+                'price_change': 'Price + Change',
+                'price_only': 'Price Only',
+                'ticker_price': 'Ticker + Price'
+            }
+            auto_refresh = " (Auto)" if preset.get('auto_refresh', False) else ""
+            return f"{ticker} - {format_names.get(format_type, format_type)}{auto_refresh}"
+        elif preset_type == "youtube":
+            channel = preset.get('channel', 'Unknown')
+            format_type = preset.get('format', 'subs_views')
+            format_names = {
+                'subs_views': 'Subs + Views',
+                'subs_only': 'Subscribers',
+                'channel_subs': 'Channel + Subs',
+                'latest_views': 'Latest Video'
+            }
+            auto_refresh = " (Auto)" if preset.get('auto_refresh', False) else ""
+            return f"{format_names.get(format_type, format_type)}{auto_refresh}"
+        elif preset_type == "weather":
+            location = preset.get('location', 'Unknown')
+            unit = preset.get('unit', 'metric')
+            unit_symbol = "°C" if unit == "metric" else "°F"
+            auto_refresh = " (Auto)" if preset.get('auto_refresh', False) else ""
+            return f"{location} ({unit_symbol}){auto_refresh}"
+        elif preset_type == "animation":
+            anim_type = preset.get('anim_type', 'game_of_life')
+            anim_names = {
+                'game_of_life': "Conway's Life",
+                'matrix': 'Matrix Rain',
+                'fire': 'Fire Effect',
+                'starfield': 'Starfield',
+                'plasma': 'Plasma'
+            }
+            color_scheme = preset.get('color_scheme', 'white')
+            fps = preset.get('speed', 10)
+            return f"{anim_names.get(anim_type, anim_type)} - {color_scheme.title()} @ {fps}fps"
         elif preset_type == "clock":
             clock_mode = preset.get('clock_mode', 'builtin')
             if clock_mode == 'custom':
@@ -1746,6 +3345,18 @@ class iPixelController:
             if preset_type == "text":
                 fg_color = preset.get('text_color', '#FFFFFF')
                 bg_color = preset.get('bg_color', '#000000')
+            elif preset_type == "stock":
+                fg_color = preset.get('text_color', '#00FF00')
+                bg_color = preset.get('bg_color', '#000000')
+            elif preset_type == "youtube":
+                fg_color = preset.get('text_color', '#FFFFFF')
+                bg_color = preset.get('bg_color', '#000000')
+            elif preset_type == "weather":
+                fg_color = preset.get('text_color', '#FFFFFF')
+                bg_color = preset.get('bg_color', '#000000')
+            elif preset_type == "animation":
+                fg_color = '#FFFFFF'
+                bg_color = '#000000'
             elif preset_type == "clock":
                 clock_mode = preset.get('clock_mode', 'builtin')
                 if clock_mode == 'custom':
@@ -1856,7 +3467,7 @@ class iPixelController:
             name_label.pack(anchor=tk.W)
             
             # Type and details
-            type_icon = {"text": "📝", "image": "🖼️", "clock": "🕐"}.get(preset_type, "❓")
+            type_icon = {"text": "📝", "image": "🖼️", "clock": "🕐", "stock": "📈", "youtube": "📺", "weather": "🌤️", "animation": "🎨"}.get(preset_type, "❓")
             details = self.get_preset_details(preset)
             details_label = ttk.Label(info_frame, text=f"{type_icon} {preset_type.upper()}: {details}",
                                      foreground="gray", font=('TkDefaultFont', 8))
@@ -2197,6 +3808,135 @@ class iPixelController:
                             self.clock_running = False
                     
                     update_countdown()
+                
+            elif preset_type == "stock":
+                # Execute stock preset - fetch and display
+                ticker = preset.get('ticker', 'AAPL')
+                format_type = preset.get('format', 'price_change')
+                text_color = preset.get('text_color', '#00FF00')
+                bg_color = preset.get('bg_color', '#000000')
+                animation = preset.get('animation', 1)
+                speed = preset.get('speed', 30)
+                auto_color = preset.get('auto_color', True)
+                auto_refresh = preset.get('auto_refresh', False)
+                refresh_interval = preset.get('refresh_interval', 60)
+                
+                def fetch_and_send():
+                    try:
+                        import yfinance as yf
+                        stock = yf.Ticker(ticker)
+                        info = stock.info
+                        
+                        current_price = info.get('currentPrice') or info.get('regularMarketPrice')
+                        previous_close = info.get('previousClose') or info.get('regularMarketPreviousClose')
+                        
+                        if current_price is None:
+                            self.root.after(0, lambda: messagebox.showerror(
+                                "Stock Error", f"Could not fetch data for {ticker}"))
+                            return
+                        
+                        change = current_price - previous_close if previous_close else 0
+                        change_percent = (change / previous_close * 100) if previous_close else 0
+                        
+                        # Format price to max 7 characters
+                        price_str = self.format_stock_price(current_price)
+                        
+                        # Format text
+                        if format_type == "price_change":
+                            change_symbol = "↑" if change >= 0 else "↓"
+                            text = f"{price_str} {change_symbol}{abs(change_percent):.1f}%"
+                        elif format_type == "price_only":
+                            text = price_str
+                        else:  # ticker_price
+                            text = f"{ticker} {price_str}"
+                        
+                        # Determine color
+                        if auto_color:
+                            display_color = "#00FF00" if change >= 0 else "#FF0000"
+                        else:
+                            display_color = text_color
+                        
+                        # Send to display
+                        def send_task():
+                            try:
+                                color_hex = display_color.lstrip('#')
+                                bg_color_hex = bg_color.lstrip('#')
+                                inverted_speed = 101 - speed
+                                
+                                result = self.client.send_text(
+                                    text,
+                                    char_height=16,
+                                    color=color_hex,
+                                    bg_color=bg_color_hex,
+                                    animation=animation,
+                                    speed=inverted_speed,
+                                    rainbow_mode=0
+                                )
+                                
+                                if asyncio.iscoroutine(result):
+                                    self.run_async(result)
+                            except Exception as e:
+                                error_msg = str(e)
+                                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to send: {error_msg}"))
+                        
+                        threading.Thread(target=send_task, daemon=True).start()
+                        
+                        # Schedule auto-refresh
+                        if auto_refresh:
+                            interval_ms = refresh_interval * 1000
+                            self.root.after(interval_ms, fetch_and_send)
+                        
+                    except ImportError:
+                        self.root.after(0, lambda: messagebox.showerror(
+                            "Missing Library", 
+                            "yfinance library not installed.\n\nInstall with: pip install yfinance"))
+                    except Exception as e:
+                        error_msg = str(e)
+                        self.root.after(0, lambda: messagebox.showerror("Stock Error", f"Error: {error_msg}"))
+                
+                threading.Thread(target=fetch_and_send, daemon=True).start()
+            
+            elif preset_type == "youtube":
+                # Execute YouTube preset
+                self.youtube_channel_var.set(preset.get('channel', ''))
+                self.youtube_format_var.set(preset.get('format', 'subs_views'))
+                self.youtube_text_color = preset.get('text_color', '#FFFFFF')
+                self.youtube_bg_color = preset.get('bg_color', '#000000')
+                self.youtube_animation_var.set(preset.get('animation', 'scroll'))
+                self.youtube_speed_var.set(preset.get('speed', 50))
+                self.youtube_auto_refresh_var.set(preset.get('auto_refresh', False))
+                self.youtube_refresh_interval_var.set(preset.get('refresh_interval', 300))
+                
+                # Fetch and send
+                self.fetch_youtube_stats()
+                self.root.after(2000, self.send_youtube_to_display)  # Wait for fetch to complete
+            
+            elif preset_type == "weather":
+                # Execute Weather preset
+                self.weather_location_var.set(preset.get('location', ''))
+                self.weather_unit_var.set(preset.get('unit', 'metric'))
+                self.weather_format_var.set(preset.get('format', 'temp_condition'))
+                self.weather_text_color = preset.get('text_color', '#FFFFFF')
+                self.weather_bg_color = preset.get('bg_color', '#000000')
+                self.weather_animation_var.set(preset.get('animation', 'scroll'))
+                self.weather_speed_var.set(preset.get('speed', 50))
+                self.weather_auto_refresh_var.set(preset.get('auto_refresh', False))
+                self.weather_refresh_interval_var.set(preset.get('refresh_interval', 600))
+                
+                # Fetch and send
+                self.fetch_weather_data()
+                self.root.after(2000, self.send_weather_to_display)  # Wait for fetch to complete
+            
+            elif preset_type == "animation":
+                # Execute Animation preset
+                self.anim_type_var.set(preset.get('anim_type', 'game_of_life'))
+                self.anim_color_scheme_var.set(preset.get('color_scheme', 'white'))
+                self.anim_speed_var.set(preset.get('speed', 10))
+                self.anim_duration_var.set(preset.get('duration', 30))
+                self.gol_density_var.set(preset.get('gol_density', 30))
+                
+                # Start animation
+                self.send_animation_to_display()
                 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to execute preset: {str(e)}")

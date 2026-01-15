@@ -1,5 +1,6 @@
 {
   "auto_connect": true,
   "last_device": "8B:84:96:03:7E:B5",
-  "last_preset": "Update Logo"
+  "last_preset": "Update Logo",
+  "weather_api_key": "6e0140fe7e682c9e27f18748cb877e4e"
 }

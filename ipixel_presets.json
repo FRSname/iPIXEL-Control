@@ -76,5 +76,18 @@
     "type": "image",
     "image_path": "C:/FRS/SortMe/iPIXEL Control/Gallery/update-ucka.gif",
     "thumbnail": "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAIAAAAphe5+AAAAvElEQVR4nN2W0Q7DIAhFge4L96H7Q2Izm2ykKl4dPrj7ZIAeSm6k5ZQS7axHNcrMRATOpq938aXjCT2C87UHl7L0otuDpTgNwEqcrwBcbK5a0U3hwaGUYvCvA6O6mWv9dXwIh0tIg9vhxxl0BD7vgOVyFn6JA+FCm0vK0Ge7gWu03Cq+hvjcg/+dA5rvR8oK2Ser+eLc8YlPbEvr+NLqEfj2S/nS6oEE51Ld4DEC53IVLP05m+CzC68MsJdO5hGmg22zCqwAAAAASUVORK5CYII="
+  },
+  {
+    "name": "Price - BTC-USD",
+    "type": "stock",
+    "ticker": "BTC-USD",
+    "format": "price_only",
+    "text_color": "#FF0000",
+    "bg_color": "#000000",
+    "animation": 0,
+    "speed": 30,
+    "auto_color": true,
+    "auto_refresh": true,
+    "refresh_interval": 60
   }
 ]

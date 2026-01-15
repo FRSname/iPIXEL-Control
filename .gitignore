@@ -2,3 +2,24 @@
 /llama-20260114-144425.piskel
 /playlists
 /test_thumbnails.py
+
+# Settings and API keys (DO NOT COMMIT)
+ipixel_settings.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
