@@ -6,14 +6,79 @@ A desktop application to control iPixel Color LED matrix displays (like BGLight,
 
 ## Features
 
+### Core Features
 - 🔍 **Auto-scan** for iPixel devices via Bluetooth
 - 📝 **Send text** with customizable font size, text color, and background color
-- 🖼️ **Display images** (PNG, JPG, GIF, BMP)
-- 🕐 **Clock mode** with 9 different styles
+- 🖼️ **Display images** (PNG, JPG, GIF, BMP) with thumbnail previews
+- 🕐 **Clock mode** with 9 different styles, custom time formats, and countdown timers
+- 💾 **Preset system** - Save and quickly execute your favorite configurations
 - 💡 **Brightness control** (1-100%)
 - ⚡ **Power control** (ON/OFF)
 - 🎨 **Color picker** for text and background
 - 🖥️ **Easy-to-use GUI** built with Tkinter
+
+### Advanced Features
+
+#### 📈 Stock Market Display
+Display live stock prices directly on your LED panel! 
+- **No API key required** - Uses free yfinance library
+- Support for any stock ticker (AAPL, TSLA, BTC-USD, etc.)
+- Auto-refresh with configurable intervals
+- Smart price formatting (auto-adjusts decimals, uses K notation for large numbers)
+- Auto-color based on price movement (green=up, red=down)
+- Multiple display formats:
+  - Price + Change percentage with arrows (↑/↓)
+  - Price only
+  - Ticker + Price
+
+#### 📺 YouTube Stats
+Show your YouTube channel statistics on your display!
+- Display subscriber counts, total views, video counts
+- Support for latest video view counts
+- Works with channel IDs or @handles
+- Auto-refresh capability
+- Smart number formatting (1.2M, 450K, etc.)
+- Multiple display formats:
+  - Subscribers + Views
+  - Subscribers only
+  - Channel name + Subscribers
+  - Latest video views
+- **Requires:** Free YouTube Data API v3 key from Google Cloud Console
+- **Quota:** 10,000 units/day (free tier)
+
+#### 🌤️ Weather Display
+Show current weather conditions and temperature!
+- Real-time weather data from OpenWeatherMap
+- Support for any city worldwide
+- Temperature in Celsius or Fahrenheit
+- Display current temperature, condition, feels-like, humidity
+- Auto-refresh with configurable intervals
+- Multiple display formats:
+  - Temperature + Condition (e.g., "72°F Sunny")
+  - Temperature only
+  - City + Temperature
+  - Full info
+- **Requires:** Free OpenWeatherMap API key
+- **Quota:** 1,000 calls/day, updates every 10 minutes (free tier)
+
+#### 🎨 Pixel Art Animations
+Generate and display procedural pixel art animations!
+- **Conway's Game of Life**: Classic cellular automaton with emergent patterns
+  - Adjustable initial density (10-50%)
+  - Watch patterns evolve in real-time
+- **Matrix Rain**: Digital rain effect inspired by The Matrix
+  - Falling character trails with fade effect
+- **Fire Effect**: Realistic fire simulation
+  - Heat propagation algorithm
+  - Red-orange-yellow gradient
+- **Starfield**: Parallax scrolling stars
+  - 3 speed levels for depth perception
+- **Plasma**: Colorful interference patterns
+  - Sine wave-based smooth animations
+- Configurable FPS (1-30, recommended 10-20 for best results)
+- Color schemes: White, Green, Blue, Red, Rainbow
+- Duration control (set seconds or infinite loop)
+- **No API key required**
 
 ## Requirements
 
@@ -106,7 +171,67 @@ To create a standalone .exe file that doesn't require Python:
 
 The clock will display the current time and update automatically.
 
-### 5. Adjust Settings
+### 5. Stock Market Display
+
+1. Go to the **"📈 Stock"** tab
+2. Enter a stock ticker symbol (e.g., AAPL, TSLA, GOOGL)
+3. Click **"Fetch Stock Data"**
+4. Choose your display format and colors
+5. Click **"Send to Display"**
+6. Enable auto-refresh to update prices automatically
+
+**Note:** No API key required - uses yfinance library.
+
+### 6. YouTube Stats
+
+1. Go to the **"📺 YouTube"** tab
+2. Enter your **YouTube API key** (get one from [Google Cloud Console](https://console.cloud.google.com/))
+3. Enter a channel ID or @handle (e.g., @MrBeast)
+4. Click **"Fetch Stats"**
+5. Choose display format (subs only, subs + views, etc.)
+6. Click **"Send to Display"**
+
+**Display formats:**
+- Subscribers + Views
+- Subscribers Only
+- Channel Name + Subscribers
+- Latest Video Views
+
+### 7. Weather Display
+
+1. Go to the **"🌤️ Weather"** tab
+2. Enter your **OpenWeatherMap API key** (get free key from [openweathermap.org](https://openweathermap.org/api))
+3. Enter your city name
+4. Select temperature unit (°C or °F)
+5. Click **"Fetch Weather"**
+6. Choose display format
+7. Click **"Send to Display"**
+
+**Display formats:**
+- Temperature + Condition
+- Temperature Only
+- City + Temperature
+- Full (all info)
+
+### 8. Pixel Art Animations
+
+1. Go to the **"🎨 Animations"** tab
+2. Choose an animation type:
+   - **Conway's Game of Life**: Classic cellular automaton
+   - **Matrix Rain**: Digital rain effect
+   - **Fire Effect**: Realistic fire simulation
+   - **Starfield**: Moving stars
+   - **Plasma**: Colorful plasma effect
+3. Select color scheme and speed (FPS)
+4. Set duration (0 = infinite loop)
+5. Click **"Start Animation"**
+
+**Tips:**
+- Higher FPS = smoother but more CPU intensive
+- Game of Life density affects initial pattern complexity
+- Use rainbow color for psychedelic effects
+
+### 9. Adjust Settings
 
 Go to the **"Settings"** tab to:
 - **Adjust brightness**: Drag the slider (1-100%) and click "Set Brightness"
@@ -148,6 +273,38 @@ Go to the **"Settings"** tab to:
 - Close other Bluetooth applications
 - Reduce image size before sending
 - Move panel closer to PC for better signal
+
+## API Keys Setup
+
+### YouTube API Key
+
+To use the YouTube Stats feature, you need a free YouTube Data API v3 key:
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project (or select existing)
+3. Enable **YouTube Data API v3**:
+   - Go to "APIs & Services" → "Library"
+   - Search for "YouTube Data API v3"
+   - Click "Enable"
+4. Create credentials:
+   - Go to "APIs & Services" → "Credentials"
+   - Click "Create Credentials" → "API Key"
+   - Copy the generated key
+5. Paste the key in the app's YouTube tab and click "Save Key"
+
+**Note:** Free tier includes 10,000 quota units/day (sufficient for personal use).
+
+### OpenWeatherMap API Key
+
+To use the Weather Display feature, you need a free OpenWeatherMap API key:
+
+1. Go to [openweathermap.org](https://openweathermap.org/api)
+2. Click "Sign Up" and create a free account
+3. Go to your account → "API keys"
+4. Copy the default API key (or create a new one)
+5. Paste the key in the app's Weather tab and click "Save Key"
+
+**Note:** Free tier includes 1,000 API calls/day and updates every 10 minutes.
 
 ## Technical Details
 
