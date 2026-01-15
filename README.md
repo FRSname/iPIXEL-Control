@@ -4,6 +4,28 @@ A desktop application to control iPixel Color LED matrix displays (like BGLight,
 
 ![iPixel Controller](screenshot.png)
 
+## 🚀 Quick Start
+
+**New users?** Read [INSTALL.md](INSTALL.md) or [START_HERE.txt](START_HERE.txt) for step-by-step instructions!
+
+### Installation (3 steps)
+
+1. **Install Python 3.8+** from [python.org](https://www.python.org/downloads/)
+   - ⚠️ Check "Add Python to PATH" during installation!
+
+2. **Install dependencies:**
+   ```bash
+   python -m pip install -r requirements.txt
+   ```
+
+3. **Launch the app:**
+   ```bash
+   python run.py
+   ```
+   Or simply double-click `run.py`
+
+**Note:** Use `run.py` instead of `run.bat` - Python files aren't blocked by Windows Smart App Control!
+
 ## Features
 
 ### Core Features
