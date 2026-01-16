@@ -1,16 +1,5 @@
 [
   {
-    "name": "update now",
-    "type": "text",
-    "text": "Update NOW!",
-    "text_color": "#FFFFFF",
-    "bg_color": "#000000",
-    "char_height": 16,
-    "animation": 1,
-    "speed": 10,
-    "rainbow": 5
-  },
-  {
     "name": "Heart",
     "type": "image",
     "image_path": "C:/FRS/SortMe/iPIXEL Control/Gallery/pixil-gif-drawing (1).gif",
@@ -55,23 +44,6 @@
     "rainbow": 0
   },
   {
-    "name": "UCK25 Countdown",
-    "type": "clock",
-    "clock_mode": "countdown",
-    "countdown_event": "UCK25",
-    "countdown_year": 2026,
-    "countdown_month": 5,
-    "countdown_day": 26,
-    "countdown_hour": 12,
-    "countdown_minute": 0,
-    "countdown_format": "with_name",
-    "countdown_color": "#ffff00",
-    "countdown_bg_color": "#000000",
-    "countdown_animation": "scroll_left",
-    "countdown_speed": 100,
-    "countdown_update_interval": 60
-  },
-  {
     "name": "Update Logo",
     "type": "image",
     "image_path": "C:/FRS/SortMe/iPIXEL Control/Gallery/update-ucka.gif",
@@ -89,5 +61,41 @@
     "auto_color": true,
     "auto_refresh": true,
     "refresh_interval": 60
+  },
+  {
+    "name": "UCK26 - anim",
+    "type": "image",
+    "image_path": "C:/FRS/SortMe/iPIXEL Control/Gallery/UCK26-Anim.gif",
+    "thumbnail": "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAIAAAAphe5+AAAA+0lEQVR4nNVWWw6EIAxsyX5zJA/vkTwA3cRmmwq0FdFsnC+wrxkoCBIRvBkJXo6PZUBEHvAWVVP9RdCaLsS2Dn6PmAIAoKw5LVt3iohlzZU/IkqxmVg8OmjTmIAzYFotoZOB0MQKe8lc1uxomBKQlk2aZEiDBIIRqzP7qWZ3QJc86anXEnf2Wo/j/KAAp4xD0TFx24TJ79yBFkziAnuG9NWzh1hq8KCqZB2MkH063mCOhtt+ZF2ucpPosxiyZ9AOiBDvgHMPCDOLPREx3e4qVpm11c88ICCMDx1Egx+Yfj2jNYvJuyQsm7Xw80+JMDOMPCW8A/4KpH8TmMUXw2rq3f1XSmsAAAAASUVORK5CYII="
+  },
+  {
+    "name": "UCK26-countdown",
+    "type": "clock",
+    "clock_mode": "countdown",
+    "countdown_event": "UCK26",
+    "countdown_year": 2026,
+    "countdown_month": 5,
+    "countdown_day": 26,
+    "countdown_hour": 0,
+    "countdown_minute": 0,
+    "countdown_format": "days_hours_mins",
+    "countdown_color": "#ffff00",
+    "countdown_bg_color": "#000000",
+    "countdown_animation": "static",
+    "countdown_speed": 50,
+    "countdown_update_interval": 60
+  },
+  {
+    "name": "Weather - Ostrava",
+    "type": "weather",
+    "location": "Ostrava",
+    "unit": "metric",
+    "format": "temp_only",
+    "text_color": "#00FFFF",
+    "bg_color": "#000000",
+    "animation": 0,
+    "speed": 30,
+    "auto_refresh": false,
+    "refresh_interval": 600
   }
 ]

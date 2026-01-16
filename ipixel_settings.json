@@ -2,5 +2,7 @@
   "auto_connect": true,
   "last_device": "8B:84:96:03:7E:B5",
   "last_preset": "Update Logo",
-  "weather_api_key": "6e0140fe7e682c9e27f18748cb877e4e"
+  "weather_api_key": "6e0140fe7e682c9e27f18748cb877e4e",
+  "weather_use_temp_images": true,
+  "weather_temp_image_dir": "C:/FRS/SortMe/iPIXEL Control/Gallery/Weather"
 }

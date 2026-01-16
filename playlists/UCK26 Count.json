@@ -1,0 +1,17 @@
+{
+  "name": "UCK26 Count",
+  "items": [
+    {
+      "preset_name": "Update Logo",
+      "duration": 10
+    },
+    {
+      "preset_name": "UCK26 - anim",
+      "duration": 10
+    },
+    {
+      "preset_name": "UCK26-countdown",
+      "duration": 10
+    }
+  ]
+}
