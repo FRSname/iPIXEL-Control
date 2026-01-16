@@ -109,6 +109,11 @@ Generate and display procedural pixel art animations!
 - Bluetooth adapter (built-in or USB dongle)
 - iPixel Color LED panel (BGLight, B.K. Light, etc.)
 
+## Hardware Limitations
+
+- **Background color brightness:** On some iPixel panels/firmware versions, the background color rendered by the built-in text command appears dim or near-black, even when set to bright colors (e.g., white). This is a **device/firmware limitation**, not a color picker bug in the app.
+- **Workaround:** If you need a truly bright background, use a full-image preset (or a custom image) where the background is part of the image itself. The original vendor app may use different commands or firmware paths that aren’t exposed here.
+
 ## Installation
 
 ### Method 1: Using Python (Recommended)

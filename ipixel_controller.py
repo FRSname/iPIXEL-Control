@@ -26,7 +26,8 @@ class iPixelController:
     def __init__(self, root):
         self.root = root
         self.root.title("iPixel LED Panel Controller")
-        self.root.geometry("800x600")
+        self.root.geometry("800x1000")
+        self.root.minsize(700, 800)
         
         self.client = None
         self.device_address = None
@@ -47,6 +48,7 @@ class iPixelController:
         self.teams_refresh_token = None
         self.teams_last_status = None
         self.teams_timer = None
+        self.stock_refresh_timer = None
         
         # Setup UI
         self.setup_ui()
@@ -953,6 +955,9 @@ class iPixelController:
             messagebox.showwarning("No Data", "Please fetch stock data first")
             return
         
+        # Stop any running stock auto-refresh from presets
+        self.stop_stock_refresh()
+        
         # Format text based on selected format
         format_type = self.stock_format_var.get()
         stock = self.current_stock_data
@@ -1292,34 +1297,52 @@ class iPixelController:
         self.weather_bg_canvas.pack(side=tk.LEFT, padx=(0, 5))
         
         ttk.Button(weather_bg_frame, text="Choose", command=self.choose_weather_bg_color).pack(side=tk.LEFT)
-        
+
+        # Temperature images
+        ttk.Label(weather_frame, text="Temp Images:").grid(row=7, column=0, sticky=tk.W, pady=(10, 5))
+        temp_img_frame = ttk.Frame(weather_frame)
+        temp_img_frame.grid(row=7, column=1, sticky=(tk.W, tk.E), pady=(10, 5))
+        temp_img_frame.columnconfigure(0, weight=1)
+
+        self.weather_temp_image_dir_var = tk.StringVar(value=self.settings.get('weather_temp_image_dir', ''))
+        ttk.Entry(temp_img_frame, textvariable=self.weather_temp_image_dir_var, width=30).grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 5))
+        ttk.Button(temp_img_frame, text="Browse", command=self.browse_weather_temp_image_dir).grid(row=0, column=1)
+
+        self.weather_use_temp_images_var = tk.BooleanVar(value=self.settings.get('weather_use_temp_images', False))
+        ttk.Checkbutton(
+            temp_img_frame,
+            text="Use temp images (temp_plus_30.png, temp_minus_5.png)",
+            variable=self.weather_use_temp_images_var,
+            command=self.update_weather_temp_image_settings
+        ).grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+
         # Animation
-        ttk.Label(weather_frame, text="Animation:").grid(row=7, column=0, sticky=tk.W, pady=(10, 5))
+        ttk.Label(weather_frame, text="Animation:").grid(row=8, column=0, sticky=tk.W, pady=(10, 5))
         
         self.weather_animation_var = tk.IntVar(value=1)
         weather_anim_frame = ttk.Frame(weather_frame)
-        weather_anim_frame.grid(row=7, column=1, sticky=tk.W, pady=(10, 5))
+        weather_anim_frame.grid(row=8, column=1, sticky=tk.W, pady=(10, 5))
         
         for text, value in [("Static", 0), ("Scroll Left", 1), ("Scroll Right", 2)]:
             ttk.Radiobutton(weather_anim_frame, text=text, variable=self.weather_animation_var, 
                           value=value).pack(side=tk.LEFT, padx=(0, 10))
         
         # Speed
-        ttk.Label(weather_frame, text="Scroll Speed:").grid(row=8, column=0, sticky=tk.W, pady=(0, 5))
+        ttk.Label(weather_frame, text="Scroll Speed:").grid(row=9, column=0, sticky=tk.W, pady=(0, 5))
         
         self.weather_speed_var = tk.IntVar(value=30)
         weather_speed_frame = ttk.Frame(weather_frame)
-        weather_speed_frame.grid(row=8, column=1, sticky=(tk.W, tk.E), pady=(0, 5))
+        weather_speed_frame.grid(row=9, column=1, sticky=(tk.W, tk.E), pady=(0, 5))
         
         ttk.Scale(weather_speed_frame, from_=1, to=100, variable=self.weather_speed_var, 
                  orient=tk.HORIZONTAL, length=200).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Label(weather_speed_frame, textvariable=self.weather_speed_var).pack(side=tk.LEFT)
         
         # Auto-refresh
-        ttk.Label(weather_frame, text="Auto Refresh:").grid(row=9, column=0, sticky=tk.W, pady=(10, 5))
+        ttk.Label(weather_frame, text="Auto Refresh:").grid(row=10, column=0, sticky=tk.W, pady=(10, 5))
         
         weather_refresh_frame = ttk.Frame(weather_frame)
-        weather_refresh_frame.grid(row=9, column=1, sticky=tk.W, pady=(10, 5))
+        weather_refresh_frame.grid(row=10, column=1, sticky=tk.W, pady=(10, 5))
         
         self.weather_auto_refresh_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(weather_refresh_frame, text="Enable auto-refresh every", 
@@ -1332,7 +1355,7 @@ class iPixelController:
         
         # Weather info display
         self.weather_info_frame = ttk.LabelFrame(weather_frame, text="Current Weather", padding="10")
-        self.weather_info_frame.grid(row=10, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(15, 10))
+        self.weather_info_frame.grid(row=11, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(15, 10))
         
         self.weather_info_label = ttk.Label(self.weather_info_frame, text="Fetch weather data to see conditions", 
                                            foreground="gray")
@@ -1340,7 +1363,7 @@ class iPixelController:
         
         # Buttons
         weather_btn_frame = ttk.Frame(weather_frame)
-        weather_btn_frame.grid(row=11, column=0, columnspan=2, pady=(10, 0))
+        weather_btn_frame.grid(row=12, column=0, columnspan=2, pady=(10, 0))
         
         ttk.Button(weather_btn_frame, text="🌤️ Fetch Weather", 
                   command=self.fetch_weather_data).pack(side=tk.LEFT, padx=(0, 5))
@@ -1638,6 +1661,9 @@ class iPixelController:
             messagebox.showwarning("No Data", "Please fetch YouTube data first")
             return
         
+        # Stop any running stock auto-refresh from presets
+        self.stop_stock_refresh()
+        
         format_type = self.youtube_format_var.get()
         data = self.current_youtube_data
         
@@ -1754,6 +1780,40 @@ class iPixelController:
         if color[1]:
             self.weather_bg_color = color[1]
             self.weather_bg_canvas.config(bg=self.weather_bg_color)
+
+    def browse_weather_temp_image_dir(self):
+        """Select folder that contains temperature images"""
+        folder = filedialog.askdirectory(title="Select temperature image folder")
+        if folder:
+            self.weather_temp_image_dir_var.set(folder)
+            self.update_weather_temp_image_settings()
+
+    def update_weather_temp_image_settings(self):
+        """Persist weather temp image settings"""
+        self.settings['weather_use_temp_images'] = self.weather_use_temp_images_var.get()
+        self.settings['weather_temp_image_dir'] = self.weather_temp_image_dir_var.get().strip()
+        self.save_settings()
+
+    def _get_temp_image_path(self, temp_value, folder):
+        """Resolve temperature image path based on current temp."""
+        if not folder:
+            return None
+        temp_int = int(round(temp_value))
+        candidates = []
+        if temp_int < 0:
+            candidates.append(f"temp_minus_{abs(temp_int)}.png")
+            candidates.append(f"temp_-{abs(temp_int)}.png")
+        else:
+            candidates.append(f"temp_plus_{temp_int}.png")
+            candidates.append(f"temp_{temp_int}.png")
+            if temp_int == 0:
+                candidates.append("temp_0.png")
+                candidates.append("temp_plus_0.png")
+        for name in candidates:
+            path = os.path.join(folder, name)
+            if os.path.exists(path):
+                return path
+        return None
     
     def fetch_weather_data(self):
         """Fetch current weather data"""
@@ -1809,8 +1869,8 @@ class iPixelController:
                 
                 def update_ui():
                     info_text = f"{city_name}\n"
-                    info_text += f"Temperature: {temp:.1f}{unit_symbol}\n"
-                    info_text += f"Feels like: {feels_like:.1f}{unit_symbol}\n"
+                    info_text += f"Temperature: {temp:.1f}°{unit_symbol}\n"
+                    info_text += f"Feels like: {feels_like:.1f}°{unit_symbol}\n"
                     info_text += f"Condition: {description.title()}\n"
                     info_text += f"Humidity: {humidity}%"
                     
@@ -1840,24 +1900,38 @@ class iPixelController:
             messagebox.showwarning("No Data", "Please fetch weather data first")
             return
         
+        # Stop any running stock auto-refresh
+        self.stop_stock_refresh()
+        
         format_type = self.weather_format_var.get()
         data = self.current_weather_data
         
+        unit = "c" if data['unit'] == "°C" else "f"
+        temp_icon = "T"
         if format_type == "temp_condition":
-            text = f"{data['temp']:.0f}{data['unit']} {data['condition']}"
+            text = f"{temp_icon} {data['temp']:.0f}{unit} {data['condition']}"
         elif format_type == "temp_only":
-            text = f"{data['temp']:.0f}{data['unit']}"
+            text = f"{temp_icon} {data['temp']:.0f}{unit}"
         elif format_type == "city_temp":
-            text = f"{data['city']} {data['temp']:.0f}{data['unit']}"
+            text = f"{data['city']} {temp_icon} {data['temp']:.0f}{unit}"
         else:  # full
-            text = f"{data['city']} {data['temp']:.0f}{data['unit']} {data['condition']}"
+            text = f"{data['city']} {temp_icon} {data['temp']:.0f}{unit} {data['condition']}"
         
         def send_task():
             try:
                 text_color = self.weather_text_color.lstrip('#')
                 bg_color = self.weather_bg_color.lstrip('#')
                 speed = 101 - self.weather_speed_var.get()
-                
+
+                temp_img_dir = self.weather_temp_image_dir_var.get().strip()
+                if self.weather_use_temp_images_var.get() and temp_img_dir:
+                    image_path = self._get_temp_image_path(data['temp'], temp_img_dir)
+                    if image_path:
+                        result = self.client.send_image(image_path, resize_method='crop', save_slot=0)
+                        if asyncio.iscoroutine(result):
+                            self.run_async(result)
+                        return
+
                 result = self.client.send_text(
                     text,
                     char_height=16,
@@ -2551,7 +2625,7 @@ class iPixelController:
         
         self.set_brightness_btn = ttk.Button(settings_frame, text="Set Brightness", command=self.set_brightness, state=tk.DISABLED)
         self.set_brightness_btn.grid(row=1, column=0, columnspan=2, pady=(0, 20))
-        
+
         # Power control
         ttk.Label(settings_frame, text="Power Control:").grid(row=2, column=0, sticky=tk.W, pady=(0, 10))
         
@@ -2751,6 +2825,9 @@ class iPixelController:
         if hasattr(self, 'clock_running') and self.clock_running:
             self.stop_live_clock()
         
+        # Stop any running stock auto-refresh
+        self.stop_stock_refresh()
+        
         # Clear last preset to prevent auto-restore from overriding manual text
         self.settings['last_preset'] = None
         self.save_settings()
@@ -2762,10 +2839,10 @@ class iPixelController:
                 # Convert hex colors to hex strings (without #)
                 text_color_hex = self.text_color.lstrip('#')
                 bg_color_hex = self.bg_color.lstrip('#')
-                
+
                 # Invert speed: 1=slowest (100), 100=fastest (1)
                 inverted_speed = 101 - self.speed_var.get()
-                
+
                 # Call send_text with animation, speed, and rainbow mode parameters
                 result = self.client.send_text(
                     text,
@@ -2776,7 +2853,7 @@ class iPixelController:
                     speed=inverted_speed,
                     rainbow_mode=self.rainbow_var.get()
                 )
-                
+
                 # If it's a coroutine, run it async; otherwise it already executed
                 if asyncio.iscoroutine(result):
                     self.run_async(result)
@@ -2822,6 +2899,9 @@ class iPixelController:
         # Stop any running live clock
         if hasattr(self, 'clock_running') and self.clock_running:
             self.stop_live_clock()
+        
+        # Stop any running stock auto-refresh
+        self.stop_stock_refresh()
         
         # Clear last preset to prevent auto-restore from overriding manual image
         self.settings['last_preset'] = None
@@ -2874,28 +2954,28 @@ class iPixelController:
         """Choose clock text color"""
         color = colorchooser.askcolor(title="Choose Clock Text Color", initialcolor=self.clock_color)
         if color[1]:
-            self.clock_color = color[1].lower()
+            self.clock_color = color[1]
             self.clock_color_canvas.config(bg=self.clock_color)
     
     def choose_clock_bg_color(self):
         """Choose clock background color"""
         color = colorchooser.askcolor(title="Choose Clock Background Color", initialcolor=self.clock_bg_color)
         if color[1]:
-            self.clock_bg_color = color[1].lower()
+            self.clock_bg_color = color[1]
             self.clock_bg_color_canvas.config(bg=self.clock_bg_color)
     
     def choose_countdown_color(self):
         """Choose countdown text color"""
         color = colorchooser.askcolor(title="Choose Countdown Text Color", initialcolor=self.countdown_color)
         if color[1]:
-            self.countdown_color = color[1].lower()
+            self.countdown_color = color[1]
             self.countdown_color_canvas.config(bg=self.countdown_color)
     
     def choose_countdown_bg_color(self):
         """Choose countdown background color"""
         color = colorchooser.askcolor(title="Choose Countdown Background Color", initialcolor=self.countdown_bg_color)
         if color[1]:
-            self.countdown_bg_color = color[1].lower()
+            self.countdown_bg_color = color[1]
             self.countdown_bg_color_canvas.config(bg=self.countdown_bg_color)
     
     def show_clock(self):
@@ -2940,6 +3020,9 @@ class iPixelController:
         # Stop any existing clock
         self.stop_live_clock()
         
+        # Stop any running stock auto-refresh
+        self.stop_stock_refresh()
+        
         self.send_clock_btn.config(state=tk.DISABLED)
         self.stop_clock_btn.config(state=tk.NORMAL)
         
@@ -2966,9 +3049,9 @@ class iPixelController:
                 def send_task():
                     try:
                         # Remove # from hex colors
-                        color_hex = self.clock_color.lower().lstrip('#')
-                        bg_color_hex = self.clock_bg_color.lower().lstrip('#')
-                        
+                        color_hex = self.clock_color.lstrip('#')
+                        bg_color_hex = self.clock_bg_color.lstrip('#')
+
                         result = self.client.send_text(
                             text=current_time,
                             char_height=16,
@@ -2977,7 +3060,7 @@ class iPixelController:
                             animation=anim_map.get(animation, 0),
                             speed=50
                         )
-                        
+
                         if asyncio.iscoroutine(result):
                             self.run_async(result)
                     except Exception as e:
@@ -2991,13 +3074,9 @@ class iPixelController:
                 if self.clock_running:
                     interval = self.clock_update_interval_var.get() * 1000  # Convert to milliseconds
                     self.clock_timer = self.root.after(interval, update_time)
-                
             except Exception as e:
                 messagebox.showerror("Error", f"Clock error: {str(e)}")
                 self.stop_live_clock()
-        
-        # Start the update loop
-        update_time()
     
     def stop_live_clock(self):
         """Stop the live clock updates"""
@@ -3009,6 +3088,12 @@ class iPixelController:
         
         self.send_clock_btn.config(state=tk.NORMAL)
         self.stop_clock_btn.config(state=tk.DISABLED)
+    
+    def stop_stock_refresh(self):
+        """Stop stock auto-refresh"""
+        if self.stock_refresh_timer:
+            self.root.after_cancel(self.stock_refresh_timer)
+            self.stock_refresh_timer = None
     
     def start_countdown(self):
         """Start a countdown timer"""
@@ -3084,12 +3169,12 @@ class iPixelController:
                 # Send text with countdown
                 def send_task():
                     try:
-                        color_hex = self.countdown_color.lower().lstrip('#')
-                        bg_color_hex = self.countdown_bg_color.lower().lstrip('#')
-                        
+                        color_hex = self.countdown_color.lstrip('#')
+                        bg_color_hex = self.countdown_bg_color.lstrip('#')
+
                         # Invert speed: 1=slowest (100), 100=fastest (1)
                         inverted_speed = 101 - self.countdown_speed_var.get()
-                        
+
                         result = self.client.send_text(
                             text=countdown_text,
                             char_height=16,
@@ -3098,7 +3183,7 @@ class iPixelController:
                             animation=anim_map.get(animation, 0),
                             speed=inverted_speed
                         )
-                        
+
                         if asyncio.iscoroutine(result):
                             self.run_async(result)
                     except Exception as e:
@@ -3404,7 +3489,14 @@ class iPixelController:
                     return json.load(f)
         except Exception as e:
             print(f"Failed to load settings: {e}")
-        return {'auto_connect': True, 'restore_last_state': True, 'last_device': None, 'last_preset': None}
+        return {
+            'auto_connect': True,
+            'restore_last_state': True,
+            'last_device': None,
+            'last_preset': None,
+            'weather_use_temp_images': False,
+            'weather_temp_image_dir': ''
+        }
     
     def save_settings(self):
         """Save app settings to JSON file"""
@@ -3918,6 +4010,9 @@ class iPixelController:
         if hasattr(self, 'clock_running') and self.clock_running:
             self.stop_live_clock()
         
+        # Stop any running stock auto-refresh
+        self.stop_stock_refresh()
+        
         # Save as last preset for state restoration
         self.settings['last_preset'] = preset.get('name')
         self.save_settings()
@@ -3930,13 +4025,16 @@ class iPixelController:
                 def send_task():
                     try:
                         text = preset.get('text', '')
-                        text_color = preset.get('text_color', '#FFFFFF').lstrip('#')
-                        bg_color = preset.get('bg_color', '#000000').lstrip('#')
-                        
+                        text_color_raw = preset.get('text_color', '#FFFFFF')
+                        bg_color_raw = preset.get('bg_color', '#000000')
+
+                        text_color = text_color_raw.lstrip('#')
+                        bg_color = bg_color_raw.lstrip('#')
+
                         # Invert speed: 1=slowest (100), 100=fastest (1)
                         saved_speed = preset.get('speed', 50)
                         inverted_speed = 101 - saved_speed
-                        
+
                         result = self.client.send_text(
                             text,
                             char_height=preset.get('char_height', 16),
@@ -3946,7 +4044,7 @@ class iPixelController:
                             speed=inverted_speed,
                             rainbow_mode=preset.get('rainbow', 0)
                         )
-                        
+
                         if asyncio.iscoroutine(result):
                             self.run_async(result)
                     except Exception as e:
@@ -4018,9 +4116,9 @@ class iPixelController:
                             
                             def send_task():
                                 try:
-                                    color_hex = clock_color.lower().lstrip('#')
-                                    bg_color_hex = clock_bg_color.lower().lstrip('#')
-                                    
+                                    color_hex = clock_color.lstrip('#')
+                                    bg_color_hex = clock_bg_color.lstrip('#')
+
                                     result = self.client.send_text(
                                         text=current_time,
                                         char_height=16,
@@ -4029,7 +4127,7 @@ class iPixelController:
                                         animation=anim_map.get(clock_animation, 0),
                                         speed=50
                                     )
-                                    
+
                                     if asyncio.iscoroutine(result):
                                         self.run_async(result)
                                 except Exception as e:
@@ -4115,12 +4213,12 @@ class iPixelController:
                             
                             def send_task():
                                 try:
-                                    color_hex = countdown_color.lower().lstrip('#')
-                                    bg_color_hex = countdown_bg_color.lower().lstrip('#')
-                                    
+                                    color_hex = countdown_color.lstrip('#')
+                                    bg_color_hex = countdown_bg_color.lstrip('#')
+
                                     # Invert speed: 1=slowest (100), 100=fastest (1)
                                     inverted_speed = 101 - countdown_speed
-                                    
+
                                     result = self.client.send_text(
                                         text=countdown_text,
                                         char_height=16,
@@ -4129,7 +4227,7 @@ class iPixelController:
                                         animation=anim_map.get(countdown_animation, 0),
                                         speed=inverted_speed
                                     )
-                                    
+
                                     if asyncio.iscoroutine(result):
                                         self.run_async(result)
                                 except Exception as e:
@@ -4155,7 +4253,7 @@ class iPixelController:
                 format_type = preset.get('format', 'price_change')
                 text_color = preset.get('text_color', '#00FF00')
                 bg_color = preset.get('bg_color', '#000000')
-                animation = preset.get('animation', 1)
+                animation = preset.get('animation', 0)  # 0=scroll left (default)
                 speed = preset.get('speed', 30)
                 auto_color = preset.get('auto_color', True)
                 auto_refresh = preset.get('auto_refresh', False)
@@ -4223,8 +4321,11 @@ class iPixelController:
                         
                         # Schedule auto-refresh
                         if auto_refresh:
+                            # Cancel previous stock refresh timer if running
+                            if self.stock_refresh_timer:
+                                self.root.after_cancel(self.stock_refresh_timer)
                             interval_ms = refresh_interval * 1000
-                            self.root.after(interval_ms, fetch_and_send)
+                            self.stock_refresh_timer = self.root.after(interval_ms, fetch_and_send)
                         
                     except ImportError:
                         self.root.after(0, lambda: messagebox.showerror(
