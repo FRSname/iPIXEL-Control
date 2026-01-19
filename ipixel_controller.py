@@ -41,6 +41,8 @@ class iPixelController:
         self.thumbnail_cache = {}  # Cache for PhotoImage objects
         self.load_presets()
         self.settings = self.load_settings()
+        self.settings.setdefault('clock_use_time_images', False)
+        self.settings.setdefault('clock_time_image_dir', '')
         
         # Teams status monitoring
         self.teams_monitoring = False
@@ -556,6 +558,29 @@ class iPixelController:
         ttk.Spinbox(interval_frame, from_=1, to=60, textvariable=self.clock_update_interval_var, 
                    width=5).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Label(interval_frame, text="second(s)").pack(side=tk.LEFT)
+
+        # Time images (custom clock)
+        time_img_frame = ttk.Frame(self.custom_frame)
+        time_img_frame.grid(row=len(formats)+4, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
+        time_img_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(time_img_frame, text="Time Images:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
+        self.clock_time_image_dir_var = tk.StringVar(value=self.settings.get('clock_time_image_dir', ''))
+        ttk.Entry(time_img_frame, textvariable=self.clock_time_image_dir_var, width=28).grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 5))
+        ttk.Button(time_img_frame, text="Browse", command=self.browse_clock_time_image_dir).grid(row=0, column=2)
+
+        self.clock_use_time_images_var = tk.BooleanVar(value=self.settings.get('clock_use_time_images', False))
+        ttk.Checkbutton(
+            time_img_frame,
+            text="Use time images (000000.png / 2359.png / time_2359.png)",
+            variable=self.clock_use_time_images_var,
+            command=self.update_clock_time_image_settings
+        ).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(5, 0))
+
+        self.clock_image_status_var = tk.StringVar(value="Clock status will appear here")
+        ttk.Label(time_img_frame, textvariable=self.clock_image_status_var, foreground="gray").grid(
+            row=2, column=0, columnspan=3, sticky=tk.W, pady=(2, 0)
+        )
         
         # Countdown timer frame
         self.countdown_frame = ttk.LabelFrame(clock_frame, text="⏱️ Countdown Timer", padding="10")
@@ -2963,6 +2988,58 @@ class iPixelController:
         if color[1]:
             self.clock_bg_color = color[1]
             self.clock_bg_color_canvas.config(bg=self.clock_bg_color)
+
+    def browse_clock_time_image_dir(self):
+        """Select folder that contains time images"""
+        folder = filedialog.askdirectory(title="Select time image folder")
+        if folder:
+            self.clock_time_image_dir_var.set(folder)
+            self.update_clock_time_image_settings()
+
+    def update_clock_time_image_settings(self):
+        """Persist time image settings"""
+        self.settings['clock_use_time_images'] = self.clock_use_time_images_var.get()
+        self.settings['clock_time_image_dir'] = self.clock_time_image_dir_var.get().strip()
+        self.save_settings()
+
+    def _get_time_image_path(self, folder, time_strs):
+        """Resolve time image path based on current time string(s).
+
+        Supported names: HHMMSS.png, HHMM.png, time_HHMM.png, time_HHMMSS.png, time_HH_MM.png, time_HH_MM_SS.png
+        """
+        if not folder:
+            return None
+        if isinstance(time_strs, str):
+            time_strs = [time_strs]
+
+        try:
+            files = os.listdir(folder)
+        except Exception:
+            return None
+
+        file_map = {}
+        for name in files:
+            base, ext = os.path.splitext(name)
+            if ext.lower() == ".png":
+                file_map[base.lower()] = name
+
+        for time_str in time_strs:
+            candidates = []
+            if len(time_str) == 6:
+                candidates.append(f"{time_str}")
+                candidates.append(f"time_{time_str}")
+                candidates.append(f"time_{time_str[:2]}_{time_str[2:4]}_{time_str[4:]}")
+            if len(time_str) >= 4:
+                hhmm = time_str[:4]
+                candidates.append(f"{hhmm}")
+                candidates.append(f"time_{hhmm}")
+                candidates.append(f"time_{hhmm[:2]}_{hhmm[2:]}")
+
+            for key in candidates:
+                name = file_map.get(key.lower())
+                if name:
+                    return os.path.join(folder, name)
+        return None
     
     def choose_countdown_color(self):
         """Choose countdown text color"""
@@ -3008,6 +3085,8 @@ class iPixelController:
             threading.Thread(target=send_task, daemon=True).start()
         elif mode == "custom":
             # Start custom live clock
+            if hasattr(self, 'clock_image_status_var'):
+                self.clock_image_status_var.set("Starting live clock...")
             self.start_live_clock()
         else:  # countdown
             # Start countdown timer
@@ -3048,6 +3127,32 @@ class iPixelController:
                 # Send text with current time
                 def send_task():
                     try:
+                        self.root.after(0, lambda t=current_time: self.clock_image_status_var.set(f"Clock tick: {t}"))
+
+                        # Optional: use time images
+                        if self.clock_use_time_images_var.get():
+                            time_fmt = self.time_format_var.get()
+                            use_seconds = "%S" in time_fmt
+                            time_strs = [
+                                time.strftime("%H%M%S" if use_seconds else "%H%M"),
+                                time.strftime("%I%M%S" if use_seconds else "%I%M")
+                            ]
+                            folder = self.clock_time_image_dir_var.get().strip()
+                            img_path = self._get_time_image_path(folder, time_strs)
+                            if img_path:
+                                self.root.after(0, lambda p=img_path: self.clock_image_status_var.set(f"Time image: {os.path.basename(p)}"))
+                                try:
+                                    result = self.client.send_image(img_path, resize_method='crop', save_slot=0)
+                                    if asyncio.iscoroutine(result):
+                                        self.run_async(result)
+                                    return
+                                except Exception as e:
+                                    self.root.after(0, lambda: self.clock_image_status_var.set(f"Image send failed: {e}"))
+                            else:
+                                self.root.after(0, lambda: self.clock_image_status_var.set(f"No time image for {time_strs[0]} (fallback to text)"))
+                        else:
+                            self.root.after(0, lambda: self.clock_image_status_var.set("Time images disabled"))
+
                         # Remove # from hex colors
                         color_hex = self.clock_color.lstrip('#')
                         bg_color_hex = self.clock_bg_color.lstrip('#')
@@ -3077,6 +3182,9 @@ class iPixelController:
             except Exception as e:
                 messagebox.showerror("Error", f"Clock error: {str(e)}")
                 self.stop_live_clock()
+
+        # Start the update loop
+        update_time()
     
     def stop_live_clock(self):
         """Stop the live clock updates"""
@@ -3979,6 +4087,8 @@ class iPixelController:
                     preset["clock_bg_color"] = self.clock_bg_color
                     preset["clock_animation"] = self.clock_animation_var.get()
                     preset["clock_update_interval"] = self.clock_update_interval_var.get()
+                    preset["clock_use_time_images"] = self.clock_use_time_images_var.get()
+                    preset["clock_time_image_dir"] = self.clock_time_image_dir_var.get().strip()
                 else:  # countdown
                     preset["countdown_event"] = self.countdown_event_var.get()
                     preset["countdown_year"] = self.countdown_year_var.get()
@@ -4094,6 +4204,8 @@ class iPixelController:
                     clock_bg_color = preset.get('clock_bg_color', '#000000')
                     clock_animation = preset.get('clock_animation', 'static')
                     update_interval = preset.get('clock_update_interval', 1)
+                    clock_use_time_images = preset.get('clock_use_time_images', False)
+                    clock_time_image_dir = preset.get('clock_time_image_dir', '').strip()
                     
                     # Stop any existing clock
                     if hasattr(self, 'clock_running') and self.clock_running:
@@ -4116,6 +4228,29 @@ class iPixelController:
                             
                             def send_task():
                                 try:
+                                    self.root.after(0, lambda t=current_time: self.clock_image_status_var.set(f"Clock tick: {t}"))
+
+                                    if clock_use_time_images:
+                                        use_seconds = "%S" in time_format
+                                        time_strs = [
+                                            time.strftime("%H%M%S" if use_seconds else "%H%M"),
+                                            time.strftime("%I%M%S" if use_seconds else "%I%M")
+                                        ]
+                                        img_path = self._get_time_image_path(clock_time_image_dir, time_strs)
+                                        if img_path:
+                                            self.root.after(0, lambda p=img_path: self.clock_image_status_var.set(f"Time image: {os.path.basename(p)}"))
+                                            try:
+                                                result = self.client.send_image(img_path, resize_method='crop', save_slot=0)
+                                                if asyncio.iscoroutine(result):
+                                                    self.run_async(result)
+                                                return
+                                            except Exception as e:
+                                                self.root.after(0, lambda: self.clock_image_status_var.set(f"Image send failed: {e}"))
+                                        else:
+                                            self.root.after(0, lambda: self.clock_image_status_var.set(f"No time image for {time_strs[0]} (fallback to text)"))
+                                    else:
+                                        self.root.after(0, lambda: self.clock_image_status_var.set("Time images disabled"))
+
                                     color_hex = clock_color.lstrip('#')
                                     bg_color_hex = clock_bg_color.lstrip('#')
 
