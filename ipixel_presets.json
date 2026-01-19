@@ -97,5 +97,23 @@
     "speed": 30,
     "auto_refresh": false,
     "refresh_interval": 600
+  },
+  {
+    "name": "ITIXO",
+    "type": "image",
+    "image_path": "C:/FRS/SortMe/iPIXEL Control/Gallery/ITIXO.gif",
+    "thumbnail": "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAIAAAAphe5+AAAArUlEQVR4nNWVsQqGMAyEk+Dk4Ps/p4OjJ1gIsf1/pzuw32QJJHc1SR2AzUzY5IQutd/8O7JYTIO7n/vaPgB0R2KhsMkJUV4AsR19se2g74zgpmtNUluocu5rRj9qwG/dqT6vPH9IRlkewgR06hvVA7GW05syr/Zn5vfoJww8sj/7RFFrMRnjHNMfAdOt0ao+9ylxdrUGOvX1TaB7CBOQisc1Sn/LXDfEY8crZuACRxRwITV8rpAAAAAASUVORK5CYII="
+  },
+  {
+    "name": "Custom Time",
+    "type": "clock",
+    "clock_mode": "custom",
+    "time_format": "%H:%M:%S",
+    "clock_color": "#00ffff",
+    "clock_bg_color": "#000000",
+    "clock_animation": "static",
+    "clock_update_interval": 1,
+    "clock_use_time_images": true,
+    "clock_time_image_dir": "C:/FRS/SortMe/iPIXEL Control/Gallery/clock_frames"
   }
 ]

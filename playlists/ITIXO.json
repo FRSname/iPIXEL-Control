@@ -1,0 +1,17 @@
+{
+  "name": "ITIXO",
+  "items": [
+    {
+      "preset_name": "ITIXO",
+      "duration": 9
+    },
+    {
+      "preset_name": "Weather - Ostrava",
+      "duration": 10
+    },
+    {
+      "preset_name": "Custom Time",
+      "duration": 10
+    }
+  ]
+}
