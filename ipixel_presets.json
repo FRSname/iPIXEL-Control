@@ -23,16 +23,6 @@
     "thumbnail": "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAIAAAAphe5+AAACVUlEQVR4nNVVobLiMBS9ZVakLnUURSW4IoNDRhaHrSyuEssv4OATqMRVUokE1zrAUZe47LR3t9vHawo8xA5nMpmmOc3NvScnNZRS8MnowIej85iSZRBFRcuyh1zTNK2vGI/Hq9WqhWBZlmmau90OCUmSTKfTXq9nmqZRwrKstpCqBeezmkwUwL/GuUrTli90URaLRTshLZfdbrffp1zXbYloaBe9XGA4hDy/f2/bcDwCpY0fGYYBAJzzMAxL8bL5fC6ltG37fD5XBNd1gyAwTVMIgb3v+wAwHA5PpxMABEHAGCOEAEC322WMva6A532pfb15XrsCs9mstoxXD4TPXtMK5zJDAGCMqafxqzmtPC8OvQ5RVBA0IuBBr56v1ysAYC0rnE4nNIaUkpTwfT//q3a/34fn0ZzXfq8tP7b9vkUBx3H8EpX0VVEb98A5V0rFcYzDMAzfVqBWwh8QsizbbDbV0HGc9XpdJxBCLMtCWaSUmGelUiXFU2jOSwhFiLb8hOjqgWsOBgN0IQ73NblaPHA8Hr9b6CH0Jg5DbQJ6iXEHvu+jKbGodVO2JCCEwFnbtoUQbycghGKsYfetV8RdCfEyBYD1el0nUEonJRhj2G+3W6XUZDKpEzjnnudxzm+32+sJIBYLZdt/tm7barksEnuUACqglLrdbrS8rCilWFTdSY7jWCmVpqnjOHdTlNLXTVxhuSza5VK4Vn9vVgjDsDIlxt5sNkmSSCkPhwNjLAgCQgjenvV+NBqh3dM0jaLocDjkeS6lREe1RNT/iT8Enf+9gXfxG68V+YvieCuaAAAAAElFTkSuQmCC"
   },
   {
-    "name": "TIME",
-    "type": "clock",
-    "clock_mode": "custom",
-    "time_format": "%H:%M:%S",
-    "clock_color": "#ffffff",
-    "clock_bg_color": "#000000",
-    "clock_animation": "static",
-    "clock_update_interval": 1
-  },
-  {
     "name": "OFFLINE",
     "type": "text",
     "text": "OFFLINE",
@@ -105,15 +95,17 @@
     "thumbnail": "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAIAAAAphe5+AAAArUlEQVR4nNWVsQqGMAyEk+Dk4Ps/p4OjJ1gIsf1/pzuw32QJJHc1SR2AzUzY5IQutd/8O7JYTIO7n/vaPgB0R2KhsMkJUV4AsR19se2g74zgpmtNUluocu5rRj9qwG/dqT6vPH9IRlkewgR06hvVA7GW05syr/Zn5vfoJww8sj/7RFFrMRnjHNMfAdOt0ao+9ylxdrUGOvX1TaB7CBOQisc1Sn/LXDfEY8crZuACRxRwITV8rpAAAAAASUVORK5CYII="
   },
   {
-    "name": "Custom Time",
+    "name": "Custom Clocks",
     "type": "clock",
     "clock_mode": "custom",
     "time_format": "%H:%M:%S",
     "clock_color": "#00ffff",
-    "clock_bg_color": "#000000",
+    "clock_bg_color": "#ffffff",
     "clock_animation": "static",
     "clock_update_interval": 1,
-    "clock_use_time_images": true,
-    "clock_time_image_dir": "C:/FRS/SortMe/iPIXEL Control/Gallery/clock_frames"
+    "clock_use_time_sprite": true,
+    "clock_time_sprite_path": "C:/FRS/SortMe/iPIXEL Control/clock_sprite_white.png",
+    "clock_time_sprite_order": "0123456789:",
+    "clock_time_sprite_cols": 11
   }
 ]

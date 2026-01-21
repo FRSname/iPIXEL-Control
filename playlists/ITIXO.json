@@ -3,14 +3,15 @@
   "items": [
     {
       "preset_name": "ITIXO",
-      "duration": 9
+      "duration": 10.0,
+      "use_anim_duration": true
     },
     {
       "preset_name": "Weather - Ostrava",
       "duration": 10
     },
     {
-      "preset_name": "Custom Time",
+      "preset_name": "Custom Clocks",
       "duration": 10
     }
   ]
