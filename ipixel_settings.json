@@ -1,10 +1,18 @@
 {
   "auto_connect": true,
   "last_device": "8B:84:96:03:7E:B5",
-  "last_preset": "Weather - Ostrava",
+  "last_preset": "ITIXO",
   "weather_api_key": "6e0140fe7e682c9e27f18748cb877e4e",
   "weather_use_temp_images": true,
   "weather_temp_image_dir": "C:/FRS/SortMe/iPIXEL Control/Gallery/Weather",
-  "clock_use_time_images": true,
-  "clock_time_image_dir": "C:/FRS/SortMe/iPIXEL Control/Gallery/clock_frames"
+  "clock_use_time_images": false,
+  "clock_time_image_dir": "C:/FRS/SortMe/iPIXEL Control/Gallery/clock_frames",
+  "clock_use_time_sprite": true,
+  "clock_time_sprite_path": "C:/FRS/SortMe/iPIXEL Control/clock_sprite_white.png",
+  "clock_time_sprite_order": "0123456789:",
+  "clock_time_sprite_cols": 11,
+  "text_use_sprite_font": true,
+  "text_sprite_path": "C:/FRS/SortMe/iPIXEL Control/text_sprite_test.png",
+  "text_sprite_order": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/",
+  "text_sprite_cols": 11
 }

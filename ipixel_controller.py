@@ -12,6 +12,7 @@ from PIL import Image, ImageTk, ImageDraw, ImageFont
 import os
 import sys
 import tempfile
+import math
 import json
 
 try:
@@ -41,8 +42,14 @@ class iPixelController:
         self.thumbnail_cache = {}  # Cache for PhotoImage objects
         self.load_presets()
         self.settings = self.load_settings()
-        self.settings.setdefault('clock_use_time_images', False)
-        self.settings.setdefault('clock_time_image_dir', '')
+        self.settings.setdefault('clock_use_time_sprite', False)
+        self.settings.setdefault('clock_time_sprite_path', '')
+        self.settings.setdefault('clock_time_sprite_order', '0123456789:')
+        self.settings.setdefault('clock_time_sprite_cols', 11)
+        self.settings.setdefault('text_use_sprite_font', False)
+        self.settings.setdefault('text_sprite_path', '')
+        self.settings.setdefault('text_sprite_order', '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/ ') 
+        self.settings.setdefault('text_sprite_cols', 11)
         
         # Teams status monitoring
         self.teams_monitoring = False
@@ -106,7 +113,6 @@ class iPixelController:
         self.create_control_board_tab()
         self.create_text_tab()
         self.create_image_tab()
-        self.create_overlay_tab()
         self.create_clock_tab()
         self.create_stock_tab()
         self.create_youtube_tab()
@@ -314,10 +320,43 @@ class iPixelController:
         
         ttk.Label(text_frame, text="(Different rainbow modes create various color effects)", 
                  font=('TkDefaultFont', 8, 'italic')).grid(row=8, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
+
+        # Sprite font (custom text)
+        sprite_frame = ttk.LabelFrame(text_frame, text="Sprite Font", padding="8")
+        sprite_frame.grid(row=9, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        sprite_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(sprite_frame, text="Sprite Sheet:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
+        self.text_sprite_path_var = tk.StringVar(value=self.settings.get('text_sprite_path', ''))
+        ttk.Entry(sprite_frame, textvariable=self.text_sprite_path_var, width=28).grid(
+            row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 5)
+        )
+        ttk.Button(sprite_frame, text="Browse", command=self.browse_text_sprite_file).grid(row=0, column=2)
+
+        self.text_use_sprite_var = tk.BooleanVar(value=self.settings.get('text_use_sprite_font', False))
+        ttk.Checkbutton(
+            sprite_frame,
+            text="Use sprite font (render text as image)",
+            variable=self.text_use_sprite_var,
+            command=self.update_text_sprite_settings
+        ).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(5, 0))
+
+        sprite_opts = ttk.Frame(sprite_frame)
+        sprite_opts.grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=(5, 0))
+        ttk.Label(sprite_opts, text="Glyph order:").pack(side=tk.LEFT, padx=(0, 5))
+        self.text_sprite_order_var = tk.StringVar(value=self.settings.get('text_sprite_order', '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/ '))
+        ttk.Entry(sprite_opts, textvariable=self.text_sprite_order_var, width=24).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Label(sprite_opts, text="Columns:").pack(side=tk.LEFT, padx=(0, 5))
+        self.text_sprite_cols_var = tk.IntVar(value=self.settings.get('text_sprite_cols', 11))
+        ttk.Spinbox(sprite_opts, from_=1, to=64, textvariable=self.text_sprite_cols_var, width=5).pack(side=tk.LEFT)
+
+        ttk.Label(sprite_frame, text="Note: Sprite font ignores animation/rainbow.", foreground="gray").grid(
+            row=3, column=0, columnspan=3, sticky=tk.W, pady=(2, 0)
+        )
         
         # Send button
         self.send_text_btn = ttk.Button(text_frame, text="Send Text", command=self.send_text, state=tk.DISABLED)
-        self.send_text_btn.grid(row=9, column=0, columnspan=2, pady=(10, 0))
+        self.send_text_btn.grid(row=10, column=0, columnspan=2, pady=(10, 0))
         
     def create_image_tab(self):
         """Create the image control tab"""
@@ -355,96 +394,6 @@ class iPixelController:
         ttk.Button(btn_frame, text="Load Image", command=self.load_image).pack(side=tk.LEFT, padx=(0, 5))
         self.send_image_btn = ttk.Button(btn_frame, text="Send Image", command=self.send_image, state=tk.DISABLED)
         self.send_image_btn.pack(side=tk.LEFT)
-        
-    def create_overlay_tab(self):
-        """Create the text+image overlay tab"""
-        overlay_frame = ttk.Frame(self.notebook, padding="10")
-        self.notebook.add(overlay_frame, text="Text+Image")
-        
-        overlay_frame.columnconfigure(1, weight=1)
-        
-        # Info
-        info_label = ttk.Label(overlay_frame, text="Display text overlay on top of a background image", 
-                              font=('TkDefaultFont', 9, 'italic'))
-        info_label.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
-        
-        # Background image
-        ttk.Label(overlay_frame, text="Background Image:").grid(row=1, column=0, sticky=tk.W, pady=(0, 5))
-        
-        bg_img_frame = ttk.Frame(overlay_frame)
-        bg_img_frame.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=(0, 5))
-        
-        self.overlay_bg_path = None
-        self.overlay_bg_label = ttk.Label(bg_img_frame, text="No image selected")
-        self.overlay_bg_label.pack(side=tk.LEFT, padx=(0, 5))
-        
-        ttk.Button(bg_img_frame, text="Load Background", command=self.load_overlay_bg).pack(side=tk.LEFT)
-        
-        # Text input
-        ttk.Label(overlay_frame, text="Overlay Text:").grid(row=2, column=0, sticky=tk.W, pady=(10, 5))
-        
-        self.overlay_text_input = tk.Text(overlay_frame, height=3, width=40)
-        self.overlay_text_input.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
-        
-        # Text color
-        ttk.Label(overlay_frame, text="Text Color:").grid(row=4, column=0, sticky=tk.W, pady=(0, 5))
-        
-        overlay_color_frame = ttk.Frame(overlay_frame)
-        overlay_color_frame.grid(row=4, column=1, sticky=tk.W, pady=(0, 5))
-        
-        self.overlay_text_color = "#FFFFFF"
-        self.overlay_text_color_canvas = tk.Canvas(overlay_color_frame, width=30, height=20, 
-                                                    bg=self.overlay_text_color, relief=tk.SUNKEN)
-        self.overlay_text_color_canvas.pack(side=tk.LEFT, padx=(0, 5))
-        
-        ttk.Button(overlay_color_frame, text="Choose", command=self.choose_overlay_text_color).pack(side=tk.LEFT)
-        
-        # Font size
-        ttk.Label(overlay_frame, text="Font Size:").grid(row=5, column=0, sticky=tk.W, pady=(0, 5))
-        
-        self.overlay_font_size_var = tk.IntVar(value=12)
-        overlay_font_frame = ttk.Frame(overlay_frame)
-        overlay_font_frame.grid(row=5, column=1, sticky=tk.W, pady=(0, 5))
-        
-        ttk.Scale(overlay_font_frame, from_=8, to=24, variable=self.overlay_font_size_var, 
-                 orient=tk.HORIZONTAL, length=200).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Label(overlay_font_frame, textvariable=self.overlay_font_size_var).pack(side=tk.LEFT)
-        
-        # Font style (bold option)
-        ttk.Label(overlay_frame, text="Font Style:").grid(row=6, column=0, sticky=tk.W, pady=(0, 5))
-        
-        self.overlay_bold_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(overlay_frame, text="Bold", variable=self.overlay_bold_var).grid(row=6, column=1, sticky=tk.W, pady=(0, 5))
-        
-        # Text position
-        ttk.Label(overlay_frame, text="Text Position:").grid(row=7, column=0, sticky=tk.W, pady=(0, 5))
-        
-        self.overlay_position_var = tk.StringVar(value="center")
-        position_frame = ttk.Frame(overlay_frame)
-        position_frame.grid(row=7, column=1, sticky=tk.W, pady=(0, 10))
-        
-        positions = [("Top", "top"), ("Center", "center"), ("Bottom", "bottom")]
-        for text, value in positions:
-            ttk.Radiobutton(position_frame, text=text, variable=self.overlay_position_var, 
-                          value=value).pack(side=tk.LEFT, padx=(0, 5))
-        
-        # Preview and Send
-        preview_frame = ttk.Frame(overlay_frame)
-        preview_frame.grid(row=8, column=0, columnspan=2, pady=(10, 0))
-        
-        ttk.Button(preview_frame, text="Preview", command=self.preview_overlay).pack(side=tk.LEFT, padx=(0, 5))
-        self.send_overlay_btn = ttk.Button(preview_frame, text="Send to Display", 
-                                          command=self.send_overlay, state=tk.DISABLED)
-        self.send_overlay_btn.pack(side=tk.LEFT)
-        
-        # Preview area
-        self.overlay_preview_frame = ttk.LabelFrame(overlay_frame, text="Preview", padding="10")
-        self.overlay_preview_frame.grid(row=9, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 0))
-        
-        self.overlay_preview_label = ttk.Label(self.overlay_preview_frame, text="No preview")
-        self.overlay_preview_label.pack()
-        
-        self.overlay_preview_image = None  # Store the PIL image
         
     def create_clock_tab(self):
         """Create the clock control tab"""
@@ -559,27 +508,37 @@ class iPixelController:
                    width=5).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Label(interval_frame, text="second(s)").pack(side=tk.LEFT)
 
-        # Time images (custom clock)
-        time_img_frame = ttk.Frame(self.custom_frame)
-        time_img_frame.grid(row=len(formats)+4, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
-        time_img_frame.columnconfigure(1, weight=1)
+        # Sprite sheet (single file) for time glyphs
+        sprite_frame = ttk.Frame(self.custom_frame)
+        sprite_frame.grid(row=len(formats)+5, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
+        sprite_frame.columnconfigure(1, weight=1)
 
-        ttk.Label(time_img_frame, text="Time Images:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
-        self.clock_time_image_dir_var = tk.StringVar(value=self.settings.get('clock_time_image_dir', ''))
-        ttk.Entry(time_img_frame, textvariable=self.clock_time_image_dir_var, width=28).grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 5))
-        ttk.Button(time_img_frame, text="Browse", command=self.browse_clock_time_image_dir).grid(row=0, column=2)
+        ttk.Label(sprite_frame, text="Sprite Sheet:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
+        self.clock_time_sprite_path_var = tk.StringVar(value=self.settings.get('clock_time_sprite_path', ''))
+        ttk.Entry(sprite_frame, textvariable=self.clock_time_sprite_path_var, width=28).grid(
+            row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 5)
+        )
+        ttk.Button(sprite_frame, text="Browse", command=self.browse_clock_time_sprite_file).grid(row=0, column=2)
 
-        self.clock_use_time_images_var = tk.BooleanVar(value=self.settings.get('clock_use_time_images', False))
-        ttk.Checkbutton(
-            time_img_frame,
-            text="Use time images (000000.png / 2359.png / time_2359.png)",
-            variable=self.clock_use_time_images_var,
-            command=self.update_clock_time_image_settings
-        ).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(5, 0))
+        self.clock_use_time_sprite_var = tk.BooleanVar(value=self.settings.get('clock_use_time_sprite', False))
+        ttk.Checkbutton(sprite_frame,
+                         text="Use sprite sheet (digits in one file)",
+                         variable=self.clock_use_time_sprite_var,
+                         command=self.update_clock_time_sprite_settings
+                         ).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(5, 0))
+
+        sprite_opts = ttk.Frame(sprite_frame)
+        sprite_opts.grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=(5, 0))
+        ttk.Label(sprite_opts, text="Glyph order:").pack(side=tk.LEFT, padx=(0, 5))
+        self.clock_time_sprite_order_var = tk.StringVar(value=self.settings.get('clock_time_sprite_order', '0123456789:'))
+        ttk.Entry(sprite_opts, textvariable=self.clock_time_sprite_order_var, width=18).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Label(sprite_opts, text="Columns:").pack(side=tk.LEFT, padx=(0, 5))
+        self.clock_time_sprite_cols_var = tk.IntVar(value=self.settings.get('clock_time_sprite_cols', 11))
+        ttk.Spinbox(sprite_opts, from_=1, to=32, textvariable=self.clock_time_sprite_cols_var, width=5).pack(side=tk.LEFT)
 
         self.clock_image_status_var = tk.StringVar(value="Clock status will appear here")
-        ttk.Label(time_img_frame, textvariable=self.clock_image_status_var, foreground="gray").grid(
-            row=2, column=0, columnspan=3, sticky=tk.W, pady=(2, 0)
+        ttk.Label(sprite_frame, textvariable=self.clock_image_status_var, foreground="gray").grid(
+            row=3, column=0, columnspan=3, sticky=tk.W, pady=(2, 0)
         )
         
         # Countdown timer frame
@@ -2861,27 +2820,44 @@ class iPixelController:
         
         def send_task():
             try:
-                # Convert hex colors to hex strings (without #)
-                text_color_hex = self.text_color.lstrip('#')
-                bg_color_hex = self.bg_color.lstrip('#')
+                if self.text_use_sprite_var.get():
+                    sprite_img, sprite_err = self._build_sprite_text_image(
+                        text,
+                        self.text_sprite_path_var.get().strip(),
+                        self.text_sprite_order_var.get(),
+                        self.text_sprite_cols_var.get(),
+                        self.bg_color
+                    )
+                    if sprite_img is None:
+                        raise Exception(sprite_err or "Sprite render failed")
 
-                # Invert speed: 1=slowest (100), 100=fastest (1)
-                inverted_speed = 101 - self.speed_var.get()
+                    tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_text_sprite.png')
+                    sprite_img.save(tmp_path, 'PNG')
+                    result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+                    if asyncio.iscoroutine(result):
+                        self.run_async(result)
+                else:
+                    # Convert hex colors to hex strings (without #)
+                    text_color_hex = self.text_color.lstrip('#')
+                    bg_color_hex = self.bg_color.lstrip('#')
 
-                # Call send_text with animation, speed, and rainbow mode parameters
-                result = self.client.send_text(
-                    text,
-                    char_height=self.font_size_var.get(),
-                    color=text_color_hex,
-                    bg_color=bg_color_hex,
-                    animation=self.animation_var.get(),
-                    speed=inverted_speed,
-                    rainbow_mode=self.rainbow_var.get()
-                )
+                    # Invert speed: 1=slowest (100), 100=fastest (1)
+                    inverted_speed = 101 - self.speed_var.get()
 
-                # If it's a coroutine, run it async; otherwise it already executed
-                if asyncio.iscoroutine(result):
-                    self.run_async(result)
+                    # Call send_text with animation, speed, and rainbow mode parameters
+                    result = self.client.send_text(
+                        text,
+                        char_height=self.font_size_var.get(),
+                        color=text_color_hex,
+                        bg_color=bg_color_hex,
+                        animation=self.animation_var.get(),
+                        speed=inverted_speed,
+                        rainbow_mode=self.rainbow_var.get()
+                    )
+
+                    # If it's a coroutine, run it async; otherwise it already executed
+                    if asyncio.iscoroutine(result):
+                        self.run_async(result)
             except Exception as e:
                 error_msg = str(e)
                 self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to send text: {error_msg}"))
@@ -2989,57 +2965,122 @@ class iPixelController:
             self.clock_bg_color = color[1]
             self.clock_bg_color_canvas.config(bg=self.clock_bg_color)
 
-    def browse_clock_time_image_dir(self):
-        """Select folder that contains time images"""
-        folder = filedialog.askdirectory(title="Select time image folder")
-        if folder:
-            self.clock_time_image_dir_var.set(folder)
-            self.update_clock_time_image_settings()
+    def browse_text_sprite_file(self):
+        """Select sprite sheet file for custom text font"""
+        filepath = filedialog.askopenfilename(
+            title="Select text sprite sheet",
+            filetypes=[("PNG files", "*.png"), ("All files", "*.*")]
+        )
+        if filepath:
+            self.text_sprite_path_var.set(filepath)
+            self.update_text_sprite_settings()
 
-    def update_clock_time_image_settings(self):
-        """Persist time image settings"""
-        self.settings['clock_use_time_images'] = self.clock_use_time_images_var.get()
-        self.settings['clock_time_image_dir'] = self.clock_time_image_dir_var.get().strip()
+    def update_text_sprite_settings(self):
+        """Persist sprite font settings for text"""
+        self.settings['text_use_sprite_font'] = self.text_use_sprite_var.get()
+        self.settings['text_sprite_path'] = self.text_sprite_path_var.get().strip()
+        self.settings['text_sprite_order'] = self.text_sprite_order_var.get().strip() or '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/ '
+        self.settings['text_sprite_cols'] = int(self.text_sprite_cols_var.get() or 1)
         self.save_settings()
 
-    def _get_time_image_path(self, folder, time_strs):
-        """Resolve time image path based on current time string(s).
+    def browse_clock_time_sprite_file(self):
+        """Select sprite sheet file for clock glyphs"""
+        filepath = filedialog.askopenfilename(
+            title="Select clock sprite sheet",
+            filetypes=[("PNG files", "*.png"), ("All files", "*.*")]
+        )
+        if filepath:
+            self.clock_time_sprite_path_var.set(filepath)
+            self.update_clock_time_sprite_settings()
 
-        Supported names: HHMMSS.png, HHMM.png, time_HHMM.png, time_HHMMSS.png, time_HH_MM.png, time_HH_MM_SS.png
-        """
-        if not folder:
-            return None
-        if isinstance(time_strs, str):
-            time_strs = [time_strs]
+    def update_clock_time_sprite_settings(self):
+        """Persist sprite sheet settings"""
+        self.settings['clock_use_time_sprite'] = self.clock_use_time_sprite_var.get()
+        self.settings['clock_time_sprite_path'] = self.clock_time_sprite_path_var.get().strip()
+        self.settings['clock_time_sprite_order'] = self.clock_time_sprite_order_var.get().strip() or '0123456789:'
+        self.settings['clock_time_sprite_cols'] = int(self.clock_time_sprite_cols_var.get() or 1)
+        self.save_settings()
+
+    def _build_sprite_text_image(self, text, sprite_path, order, cols, bg_color):
+        """Build a 64x16 image from a sprite sheet and text."""
+        if not sprite_path or not os.path.isfile(sprite_path):
+            return None, "Sprite sheet not found"
+
+        order = (order or "").strip()
+        if not order:
+            return None, "Glyph order is empty"
 
         try:
-            files = os.listdir(folder)
+            cols = int(cols)
         except Exception:
-            return None
+            cols = 1
+        cols = max(1, cols)
 
-        file_map = {}
-        for name in files:
-            base, ext = os.path.splitext(name)
-            if ext.lower() == ".png":
-                file_map[base.lower()] = name
+        try:
+            sprite = Image.open(sprite_path).convert("RGBA")
+        except Exception as e:
+            return None, f"Sprite load failed: {e}"
 
-        for time_str in time_strs:
-            candidates = []
-            if len(time_str) == 6:
-                candidates.append(f"{time_str}")
-                candidates.append(f"time_{time_str}")
-                candidates.append(f"time_{time_str[:2]}_{time_str[2:4]}_{time_str[4:]}")
-            if len(time_str) >= 4:
-                hhmm = time_str[:4]
-                candidates.append(f"{hhmm}")
-                candidates.append(f"time_{hhmm}")
-                candidates.append(f"time_{hhmm[:2]}_{hhmm[2:]}")
+        rows = max(1, math.ceil(len(order) / cols))
+        tile_w = max(1, sprite.width // cols)
+        tile_h = max(1, sprite.height // rows)
 
-            for key in candidates:
-                name = file_map.get(key.lower())
-                if name:
-                    return os.path.join(folder, name)
-        return None
+        glyphs = {}
+        for idx, ch in enumerate(order):
+            row = idx // cols
+            col = idx % cols
+            left = col * tile_w
+            upper = row * tile_h
+            right = left + tile_w
+            lower = upper + tile_h
+            if right <= sprite.width and lower <= sprite.height:
+                glyphs[ch] = sprite.crop((left, upper, right, lower))
+
+        if not glyphs:
+            return None, "No glyphs found in sprite sheet"
+
+        chars = list(text)
+        total_w = tile_w * len(chars)
+        base = Image.new("RGBA", (max(1, total_w), tile_h), bg_color)
+
+        x = 0
+        for ch in chars:
+            glyph = glyphs.get(ch)
+            if glyph is None:
+                glyph = glyphs.get(ch.upper())
+            if glyph is None and ch == " ":
+                x += tile_w
+                continue
+            if glyph is None:
+                x += tile_w
+                continue
+            base.paste(glyph, (x, 0), glyph)
+            x += tile_w
+
+        target_w, target_h = 64, 16
+        if base.size != (target_w, target_h):
+            scale = min(target_w / base.width, target_h / base.height)
+            new_w = max(1, int(base.width * scale))
+            new_h = max(1, int(base.height * scale))
+            resized = base.resize((new_w, new_h), Image.NEAREST)
+            canvas = Image.new("RGBA", (target_w, target_h), bg_color)
+            offset_x = (target_w - new_w) // 2
+            offset_y = (target_h - new_h) // 2
+            canvas.paste(resized, (offset_x, offset_y), resized)
+            base = canvas
+
+        return base.convert("RGB"), None
+
+    def _build_time_sprite_image(self, time_text):
+        """Build a 64x16 clock image from a sprite sheet."""
+        return self._build_sprite_text_image(
+            time_text,
+            self.clock_time_sprite_path_var.get().strip(),
+            self.clock_time_sprite_order_var.get() or "0123456789:",
+            self.clock_time_sprite_cols_var.get() or 1,
+            self.clock_bg_color
+        )
+
     
     def choose_countdown_color(self):
         """Choose countdown text color"""
@@ -3129,29 +3170,25 @@ class iPixelController:
                     try:
                         self.root.after(0, lambda t=current_time: self.clock_image_status_var.set(f"Clock tick: {t}"))
 
-                        # Optional: use time images
-                        if self.clock_use_time_images_var.get():
-                            time_fmt = self.time_format_var.get()
-                            use_seconds = "%S" in time_fmt
-                            time_strs = [
-                                time.strftime("%H%M%S" if use_seconds else "%H%M"),
-                                time.strftime("%I%M%S" if use_seconds else "%I%M")
-                            ]
-                            folder = self.clock_time_image_dir_var.get().strip()
-                            img_path = self._get_time_image_path(folder, time_strs)
-                            if img_path:
-                                self.root.after(0, lambda p=img_path: self.clock_image_status_var.set(f"Time image: {os.path.basename(p)}"))
+                        # Optional: use sprite sheet
+                        if self.clock_use_time_sprite_var.get():
+                            sprite_img, sprite_err = self._build_time_sprite_image(current_time)
+                            if sprite_img is not None:
+                                tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_clock_sprite.png')
+                                sprite_img.save(tmp_path, 'PNG')
+                                self.root.after(0, lambda p=tmp_path: self.clock_image_status_var.set(f"Sprite image: {os.path.basename(p)}"))
                                 try:
-                                    result = self.client.send_image(img_path, resize_method='crop', save_slot=0)
+                                    result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
                                     if asyncio.iscoroutine(result):
                                         self.run_async(result)
                                     return
                                 except Exception as e:
-                                    self.root.after(0, lambda: self.clock_image_status_var.set(f"Image send failed: {e}"))
+                                    self.root.after(0, lambda: self.clock_image_status_var.set(f"Sprite send failed: {e}"))
                             else:
-                                self.root.after(0, lambda: self.clock_image_status_var.set(f"No time image for {time_strs[0]} (fallback to text)"))
-                        else:
-                            self.root.after(0, lambda: self.clock_image_status_var.set("Time images disabled"))
+                                self.root.after(0, lambda: self.clock_image_status_var.set(f"Sprite error: {sprite_err} (fallback to images/text)"))
+
+                        if not self.clock_use_time_sprite_var.get():
+                            self.root.after(0, lambda: self.clock_image_status_var.set("Sprite sheet disabled"))
 
                         # Remove # from hex colors
                         color_hex = self.clock_color.lstrip('#')
@@ -3345,227 +3382,6 @@ class iPixelController:
                 self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to set power: {error_msg}"))
             finally:
                 self.root.after(0, lambda: btn.config(state=tk.NORMAL))
-        
-        threading.Thread(target=send_task, daemon=True).start()
-    
-    def load_overlay_bg(self):
-        """Load background image for overlay"""
-        filepath = filedialog.askopenfilename(
-            title="Select Background Image",
-            filetypes=[
-                ("Image files", "*.png *.jpg *.jpeg *.bmp *.gif"),
-                ("All files", "*.*")
-            ]
-        )
-        
-        if filepath:
-            self.overlay_bg_path = filepath
-            filename = os.path.basename(filepath)
-            self.overlay_bg_label.config(text=filename)
-            self.send_overlay_btn.config(state=tk.NORMAL if self.is_connected else tk.DISABLED)
-    
-    def choose_overlay_text_color(self):
-        """Choose overlay text color"""
-        color = colorchooser.askcolor(initialcolor=self.overlay_text_color)
-        if color[1]:
-            self.overlay_text_color = color[1]
-            self.overlay_text_color_canvas.config(bg=self.overlay_text_color)
-    
-    def preview_overlay(self):
-        """Preview the text overlay on image"""
-        if not self.overlay_bg_path:
-            messagebox.showwarning("No Background", "Please load a background image first")
-            return
-        
-        text = self.overlay_text_input.get("1.0", tk.END).strip()
-        if not text:
-            messagebox.showwarning("No Text", "Please enter text to overlay")
-            return
-        
-        try:
-            # Create the overlay image
-            overlay_result = self.create_text_overlay(
-                self.overlay_bg_path,
-                text,
-                self.overlay_text_color,
-                self.overlay_font_size_var.get(),
-                self.overlay_position_var.get(),
-                self.overlay_bold_var.get()
-            )
-            
-            # Check if it's animated (list of frames) or static (single image)
-            if isinstance(overlay_result, list):
-                # It's an animated GIF - show first frame
-                self.overlay_preview_image = overlay_result
-                preview = overlay_result[0].copy()
-                self.overlay_preview_label.config(text=f"Animated GIF ({len(overlay_result)} frames)")
-            else:
-                # It's a static image
-                self.overlay_preview_image = overlay_result
-                preview = overlay_result.copy()
-                self.overlay_preview_label.config(text="")
-            
-            # Show preview
-            preview.thumbnail((300, 300))
-            photo = ImageTk.PhotoImage(preview)
-            
-            self.overlay_preview_label.config(image=photo)
-            self.overlay_preview_label.image = photo
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to create preview: {str(e)}")
-    
-    def create_text_overlay(self, bg_image_path, text, text_color, font_size, position, bold=False):
-        """Create an image with text overlaid on background (supports animated GIFs)"""
-        # Load background image
-        bg_img = Image.open(bg_image_path)
-        
-        # Check if it's an animated GIF
-        is_animated = hasattr(bg_img, 'n_frames') and bg_img.n_frames > 1
-        
-        if is_animated:
-            # Process animated GIF
-            frames = []
-            try:
-                for frame_num in range(bg_img.n_frames):
-                    bg_img.seek(frame_num)
-                    frame = bg_img.copy()
-                    
-                    # Process this frame
-                    frame = frame.resize((64, 16), Image.Resampling.LANCZOS)
-                    if frame.mode != 'RGB':
-                        frame = frame.convert('RGB')
-                    
-                    # Add text overlay
-                    frame = self._add_text_to_image(frame, text, text_color, font_size, position, bold)
-                    frames.append(frame)
-                
-                # Save as animated GIF
-                return frames  # Return list of frames for GIF
-                
-            except Exception as e:
-                # If something goes wrong, just use first frame
-                bg_img.seek(0)
-                frame = bg_img.copy()
-                frame = frame.resize((64, 16), Image.Resampling.LANCZOS)
-                if frame.mode != 'RGB':
-                    frame = frame.convert('RGB')
-                return self._add_text_to_image(frame, text, text_color, font_size, position, bold)
-        else:
-            # Static image
-            bg_img = bg_img.resize((64, 16), Image.Resampling.LANCZOS)
-            if bg_img.mode != 'RGB':
-                bg_img = bg_img.convert('RGB')
-            return self._add_text_to_image(bg_img, text, text_color, font_size, position, bold)
-    
-    def _add_text_to_image(self, img, text, text_color, font_size, position, bold=False):
-        """Add text overlay to a single image"""
-        # Create drawing context
-        draw = ImageDraw.Draw(img)
-        
-        # Try to use better fonts (in order of preference)
-        font = None
-        font_names = []
-        
-        if bold:
-            font_names = ["arialbd.ttf", "Arial-Bold.ttf", "DejaVuSans-Bold.ttf", "FreeSansBold.ttf"]
-        else:
-            font_names = ["arial.ttf", "Arial.ttf", "DejaVuSans.ttf", "FreeSans.ttf"]
-        
-        # Try each font
-        for font_name in font_names:
-            try:
-                font = ImageFont.truetype(font_name, font_size)
-                break
-            except:
-                continue
-        
-        # If no TrueType font found, use default
-        if font is None:
-            font = ImageFont.load_default()
-        
-        # Convert hex color to RGB
-        text_color_rgb = tuple(int(text_color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
-        
-        # Get text bounding box
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        
-        # Calculate position
-        x = (64 - text_width) // 2  # Center horizontally
-        
-        if position == "top":
-            y = 1
-        elif position == "bottom":
-            y = 16 - text_height - 1
-        else:  # center
-            y = (16 - text_height) // 2
-        
-        # Draw text
-        draw.text((x, y), text, fill=text_color_rgb, font=font)
-        
-        return img
-    
-    def send_overlay(self):
-        """Send the overlay image to display"""
-        if not self.overlay_preview_image:
-            messagebox.showwarning("No Preview", "Please preview the overlay first")
-            return
-        
-        # Stop any running live clock
-        if hasattr(self, 'clock_running') and self.clock_running:
-            self.stop_live_clock()
-        
-        self.send_overlay_btn.config(state=tk.DISABLED, text="Sending...")
-        
-        def send_task():
-            try:
-                # Check if it's animated or static
-                is_animated = isinstance(self.overlay_preview_image, list)
-                
-                if is_animated:
-                    # Save as animated GIF
-                    with tempfile.NamedTemporaryFile(suffix='.gif', delete=False) as tmp:
-                        tmp_path = tmp.name
-                        frames = self.overlay_preview_image
-                        # Save first frame and append others
-                        frames[0].save(
-                            tmp_path,
-                            save_all=True,
-                            append_images=frames[1:],
-                            duration=100,  # 100ms per frame
-                            loop=0  # Loop forever
-                        )
-                else:
-                    # Save as PNG
-                    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                        tmp_path = tmp.name
-                        self.overlay_preview_image.save(tmp_path, 'PNG')
-                
-                # Clear display first
-                try:
-                    clear_result = self.client.clear()
-                    if asyncio.iscoroutine(clear_result):
-                        self.run_async(clear_result)
-                except:
-                    pass
-                
-                # Send the overlay image
-                result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
-                if asyncio.iscoroutine(result):
-                    self.run_async(result)
-                
-                # Clean up temp file
-                try:
-                    os.unlink(tmp_path)
-                except:
-                    pass
-            except Exception as e:
-                error_msg = str(e)
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to send overlay: {error_msg}"))
-            finally:
-                self.root.after(0, lambda: self.send_overlay_btn.config(state=tk.NORMAL, text="Send to Display"))
         
         threading.Thread(target=send_task, daemon=True).start()
     
@@ -4068,6 +3884,10 @@ class iPixelController:
                 preset["animation"] = self.animation_var.get()
                 preset["speed"] = self.speed_var.get()
                 preset["rainbow"] = self.rainbow_var.get()
+                preset["text_use_sprite_font"] = self.text_use_sprite_var.get()
+                preset["text_sprite_path"] = self.text_sprite_path_var.get().strip()
+                preset["text_sprite_order"] = self.text_sprite_order_var.get().strip() or '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/ '
+                preset["text_sprite_cols"] = int(self.text_sprite_cols_var.get() or 1)
             elif preset_type == "image":
                 preset["image_path"] = self.image_path if hasattr(self, 'image_path') and self.image_path else ""
                 # Generate thumbnail for image/gif
@@ -4087,8 +3907,10 @@ class iPixelController:
                     preset["clock_bg_color"] = self.clock_bg_color
                     preset["clock_animation"] = self.clock_animation_var.get()
                     preset["clock_update_interval"] = self.clock_update_interval_var.get()
-                    preset["clock_use_time_images"] = self.clock_use_time_images_var.get()
-                    preset["clock_time_image_dir"] = self.clock_time_image_dir_var.get().strip()
+                    preset["clock_use_time_sprite"] = self.clock_use_time_sprite_var.get()
+                    preset["clock_time_sprite_path"] = self.clock_time_sprite_path_var.get().strip()
+                    preset["clock_time_sprite_order"] = self.clock_time_sprite_order_var.get().strip() or '0123456789:'
+                    preset["clock_time_sprite_cols"] = int(self.clock_time_sprite_cols_var.get() or 1)
                 else:  # countdown
                     preset["countdown_event"] = self.countdown_event_var.get()
                     preset["countdown_year"] = self.countdown_year_var.get()
@@ -4137,6 +3959,24 @@ class iPixelController:
                         text = preset.get('text', '')
                         text_color_raw = preset.get('text_color', '#FFFFFF')
                         bg_color_raw = preset.get('bg_color', '#000000')
+
+                        if preset.get('text_use_sprite_font', False):
+                            sprite_img, sprite_err = self._build_sprite_text_image(
+                                text,
+                                preset.get('text_sprite_path', '').strip(),
+                                preset.get('text_sprite_order', ''),
+                                preset.get('text_sprite_cols', 1),
+                                bg_color_raw
+                            )
+                            if sprite_img is None:
+                                raise Exception(sprite_err or "Sprite render failed")
+
+                            tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_text_sprite.png')
+                            sprite_img.save(tmp_path, 'PNG')
+                            result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+                            if asyncio.iscoroutine(result):
+                                self.run_async(result)
+                            return
 
                         text_color = text_color_raw.lstrip('#')
                         bg_color = bg_color_raw.lstrip('#')
@@ -4204,8 +4044,16 @@ class iPixelController:
                     clock_bg_color = preset.get('clock_bg_color', '#000000')
                     clock_animation = preset.get('clock_animation', 'static')
                     update_interval = preset.get('clock_update_interval', 1)
-                    clock_use_time_images = preset.get('clock_use_time_images', False)
-                    clock_time_image_dir = preset.get('clock_time_image_dir', '').strip()
+                    clock_use_time_sprite = preset.get('clock_use_time_sprite', False)
+                    clock_time_sprite_path = preset.get('clock_time_sprite_path', '').strip()
+                    clock_time_sprite_order = preset.get('clock_time_sprite_order', '0123456789:')
+                    clock_time_sprite_cols = preset.get('clock_time_sprite_cols', 11)
+
+                    # Sync UI/state for sprite rendering colors
+                    self.clock_color = clock_color
+                    self.clock_bg_color = clock_bg_color
+                    self.clock_color_canvas.config(bg=self.clock_color)
+                    self.clock_bg_color_canvas.config(bg=self.clock_bg_color)
                     
                     # Stop any existing clock
                     if hasattr(self, 'clock_running') and self.clock_running:
@@ -4230,26 +4078,26 @@ class iPixelController:
                                 try:
                                     self.root.after(0, lambda t=current_time: self.clock_image_status_var.set(f"Clock tick: {t}"))
 
-                                    if clock_use_time_images:
-                                        use_seconds = "%S" in time_format
-                                        time_strs = [
-                                            time.strftime("%H%M%S" if use_seconds else "%H%M"),
-                                            time.strftime("%I%M%S" if use_seconds else "%I%M")
-                                        ]
-                                        img_path = self._get_time_image_path(clock_time_image_dir, time_strs)
-                                        if img_path:
-                                            self.root.after(0, lambda p=img_path: self.clock_image_status_var.set(f"Time image: {os.path.basename(p)}"))
+                                    if clock_use_time_sprite:
+                                        self.clock_time_sprite_path_var.set(clock_time_sprite_path)
+                                        self.clock_time_sprite_order_var.set(clock_time_sprite_order)
+                                        self.clock_time_sprite_cols_var.set(clock_time_sprite_cols)
+                                        sprite_img, sprite_err = self._build_time_sprite_image(current_time)
+                                        if sprite_img is not None:
+                                            tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_clock_sprite.png')
+                                            sprite_img.save(tmp_path, 'PNG')
+                                            self.root.after(0, lambda p=tmp_path: self.clock_image_status_var.set(f"Sprite image: {os.path.basename(p)}"))
                                             try:
-                                                result = self.client.send_image(img_path, resize_method='crop', save_slot=0)
+                                                result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
                                                 if asyncio.iscoroutine(result):
                                                     self.run_async(result)
                                                 return
                                             except Exception as e:
-                                                self.root.after(0, lambda: self.clock_image_status_var.set(f"Image send failed: {e}"))
+                                                self.root.after(0, lambda: self.clock_image_status_var.set(f"Sprite send failed: {e}"))
                                         else:
-                                            self.root.after(0, lambda: self.clock_image_status_var.set(f"No time image for {time_strs[0]} (fallback to text)"))
+                                            self.root.after(0, lambda: self.clock_image_status_var.set(f"Sprite error: {sprite_err} (fallback to text)"))
                                     else:
-                                        self.root.after(0, lambda: self.clock_image_status_var.set("Time images disabled"))
+                                        self.root.after(0, lambda: self.clock_image_status_var.set("Sprite sheet disabled"))
 
                                     color_hex = clock_color.lstrip('#')
                                     bg_color_hex = clock_bg_color.lstrip('#')
@@ -4598,8 +4446,13 @@ class iPixelController:
             playlist_listbox.delete(0, tk.END)
             for i, item in enumerate(self.playlist):
                 preset_name = item['preset_name']
-                duration = item['duration']
-                playlist_listbox.insert(tk.END, f"{i+1}. {preset_name} ({duration}s)")
+                duration = item.get('duration', 0)
+                use_anim_duration = item.get('use_anim_duration', False)
+                if use_anim_duration:
+                    duration_text = "anim"
+                else:
+                    duration_text = f"{duration:.1f}" if isinstance(duration, float) and not duration.is_integer() else f"{int(duration)}"
+                playlist_listbox.insert(tk.END, f"{i+1}. {preset_name} ({duration_text}s)")
         
         refresh_playlist_display()
         
@@ -4622,16 +4475,26 @@ class iPixelController:
         
         ttk.Label(add_controls, text="Duration (seconds):").pack(side=tk.LEFT, padx=(0, 5))
         
-        duration_var = tk.IntVar(value=10)
-        duration_spin = ttk.Spinbox(add_controls, from_=1, to=3600, textvariable=duration_var, width=10)
+        duration_var = tk.DoubleVar(value=10.0)
+        duration_spin = ttk.Spinbox(add_controls, from_=0.1, to=3600, increment=0.1, textvariable=duration_var, width=10)
         duration_spin.pack(side=tk.LEFT, padx=(0, 10))
+
+        use_anim_duration_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(add_controls, text="Use animation duration", variable=use_anim_duration_var).pack(side=tk.LEFT, padx=(10, 0))
         
         def add_to_playlist():
             if not preset_var.get():
                 return
+            try:
+                duration_value = float(duration_var.get())
+            except Exception:
+                duration_value = 10.0
+            if duration_value <= 0:
+                duration_value = 0.1
             self.playlist.append({
                 'preset_name': preset_var.get(),
-                'duration': duration_var.get()
+                'duration': duration_value,
+                'use_anim_duration': use_anim_duration_var.get()
             })
             refresh_playlist_display()
         
@@ -4728,16 +4591,33 @@ class iPixelController:
         
         item = self.playlist[self.playlist_index]
         preset_name = item['preset_name']
-        duration = item['duration']
+        duration = float(item.get('duration', 0))
+        use_anim_duration = item.get('use_anim_duration', False)
         
         # Find and execute the preset
         preset = next((p for p in self.presets if p['name'] == preset_name), None)
         if preset:
             self.playlist_status_var.set(f"Playlist: Playing '{preset_name}' ({self.playlist_index + 1}/{len(self.playlist)})")
             threading.Thread(target=self.execute_preset, args=(preset,), daemon=True).start()
-            
+
             # Schedule next preset
-            self.schedule_next_preset(duration)
+            delay_seconds = duration
+            if use_anim_duration and preset.get('type') == 'animation':
+                anim_duration = float(preset.get('duration', 0) or 0)
+                if anim_duration <= 0:
+                    anim_duration = float(self.anim_duration_var.get() or 0)
+                if anim_duration > 0:
+                    delay_seconds = anim_duration
+                    self.playlist_status_var.set(
+                        f"Playlist: Playing '{preset_name}' (anim {anim_duration}s)"
+                    )
+                else:
+                    self.playlist_status_var.set(
+                        f"Playlist: Playing '{preset_name}' (anim=0, using {duration}s)"
+                    )
+            if delay_seconds <= 0:
+                delay_seconds = 0.1
+            self.schedule_next_preset(delay_seconds)
         else:
             # Preset not found, skip to next
             self.playlist_index += 1
@@ -4750,7 +4630,8 @@ class iPixelController:
         
         if delay_seconds and self.playlist_running and not self.playlist_paused:
             self.playlist_index += 1
-            self.playlist_timer = self.root.after(int(delay_seconds * 1000), self.play_next_preset)
+            delay_ms = max(1, int(round(delay_seconds * 1000)))
+            self.playlist_timer = self.root.after(delay_ms, self.play_next_preset)
     
     def save_playlist(self):
         """Save current playlist to a file"""
