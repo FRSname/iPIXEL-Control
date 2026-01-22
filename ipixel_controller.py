@@ -42,14 +42,71 @@ class iPixelController:
         self.thumbnail_cache = {}  # Cache for PhotoImage objects
         self.load_presets()
         self.settings = self.load_settings()
+        default_text_sprite_path = os.path.join("Gallery", "Sprites", "TextSprite.png")
+        default_clock_sprite_path = os.path.join("Gallery", "Sprites", "SmallerClocksSprite-transp.png")
+        default_youtube_logo_path = os.path.join("Gallery", "Sprites", "YT-btn.png")
+        default_weather_dir = os.path.join("Gallery", "Weather")
         self.settings.setdefault('clock_use_time_sprite', False)
-        self.settings.setdefault('clock_time_sprite_path', '')
-        self.settings.setdefault('clock_time_sprite_order', '0123456789:')
-        self.settings.setdefault('clock_time_sprite_cols', 11)
         self.settings.setdefault('text_use_sprite_font', False)
-        self.settings.setdefault('text_sprite_path', '')
-        self.settings.setdefault('text_sprite_order', '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/ ') 
-        self.settings.setdefault('text_sprite_cols', 11)
+        self.settings.setdefault('text_sprite_font_name', '')
+        self.settings.setdefault('countdown_use_sprite_font', False)
+        self.settings.setdefault('countdown_sprite_font_name', '')
+        self.settings.setdefault('clock_time_sprite_font_name', '')
+        self.settings.setdefault('stock_use_sprite_font', True)
+        self.settings.setdefault('stock_sprite_font_name', '')
+        self.settings.setdefault('youtube_use_sprite_font', True)
+        self.settings.setdefault('youtube_sprite_font_name', '')
+        self.settings.setdefault('youtube_show_logo', True)
+        self.settings.setdefault('youtube_logo_path', default_youtube_logo_path)
+        self.settings.setdefault('youtube_logo_delay_seconds', 2)
+        self.settings.setdefault('sprite_fonts', [])
+        self.settings.setdefault('stock_static_delay_seconds', 2)
+        self.settings.setdefault('text_static_delay_seconds', 2)
+        self.settings.setdefault('countdown_static_delay_seconds', 2)
+        if not self.settings.get('weather_temp_image_dir'):
+            self.settings['weather_temp_image_dir'] = default_weather_dir
+
+        # Migrate legacy sprite settings into library if needed
+        if not self.settings.get('sprite_fonts'):
+            legacy_path = self.settings.get('text_sprite_path', '').strip()
+            legacy_order = self.settings.get('text_sprite_order', '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/ ')
+            legacy_cols = self.settings.get('text_sprite_cols', 11)
+            if legacy_path:
+                self.settings['sprite_fonts'] = [{
+                    'name': 'Default',
+                    'path': legacy_path,
+                    'order': legacy_order,
+                    'cols': int(legacy_cols or 1)
+                }]
+                if not self.settings.get('text_sprite_font_name'):
+                    self.settings['text_sprite_font_name'] = 'Default'
+                self.save_settings()
+            else:
+                self.settings['sprite_fonts'] = [
+                    {
+                        'name': 'Text Default',
+                        'path': default_text_sprite_path,
+                        'order': '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$% ',
+                        'cols': 73
+                    },
+                    {
+                        'name': 'Clock Default',
+                        'path': default_clock_sprite_path,
+                        'order': '0123456789:',
+                        'cols': 11
+                    }
+                ]
+                if not self.settings.get('text_sprite_font_name'):
+                    self.settings['text_sprite_font_name'] = 'Text Default'
+                if not self.settings.get('countdown_sprite_font_name'):
+                    self.settings['countdown_sprite_font_name'] = 'Text Default'
+                if not self.settings.get('stock_sprite_font_name'):
+                    self.settings['stock_sprite_font_name'] = 'Text Default'
+                if not self.settings.get('youtube_sprite_font_name'):
+                    self.settings['youtube_sprite_font_name'] = 'Text Default'
+                if not self.settings.get('clock_time_sprite_font_name'):
+                    self.settings['clock_time_sprite_font_name'] = 'Clock Default'
+                self.save_settings()
         
         # Teams status monitoring
         self.teams_monitoring = False
@@ -58,6 +115,11 @@ class iPixelController:
         self.teams_last_status = None
         self.teams_timer = None
         self.stock_refresh_timer = None
+        self.stock_static_timer = None
+        self.sprite_scroll_timer = None
+        self.sprite_scroll_running = False
+        self.text_static_timer = None
+        self.countdown_static_timer = None
         
         # Setup UI
         self.setup_ui()
@@ -157,6 +219,29 @@ class iPixelController:
         
         self.presets_canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+
+        def _on_mousewheel(event):
+            if event.num == 4:
+                self.presets_canvas.yview_scroll(-1, "units")
+            elif event.num == 5:
+                self.presets_canvas.yview_scroll(1, "units")
+            else:
+                self.presets_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _bind_mousewheel(_event=None):
+            self.presets_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            self.presets_canvas.bind_all("<Button-4>", _on_mousewheel)
+            self.presets_canvas.bind_all("<Button-5>", _on_mousewheel)
+
+        def _unbind_mousewheel(_event=None):
+            self.presets_canvas.unbind_all("<MouseWheel>")
+            self.presets_canvas.unbind_all("<Button-4>")
+            self.presets_canvas.unbind_all("<Button-5>")
+
+        self.presets_canvas.bind("<Enter>", _bind_mousewheel)
+        self.presets_canvas.bind("<Leave>", _unbind_mousewheel)
+        self.presets_scrollable_frame.bind("<Enter>", _bind_mousewheel)
+        self.presets_scrollable_frame.bind("<Leave>", _unbind_mousewheel)
         
         # Playlist section
         playlist_frame = ttk.LabelFrame(control_frame, text="🎵 Playlist - Auto Switch Presets", padding="10")
@@ -248,28 +333,18 @@ class iPixelController:
         bg_frame = ttk.Frame(text_frame)
         bg_frame.grid(row=3, column=1, sticky=tk.W, pady=(0, 10))
         
-        self.bg_color = "#000000"
+        self.bg_color = "#FFFFFF"
         self.bg_color_canvas = tk.Canvas(bg_frame, width=30, height=20, bg=self.bg_color, relief=tk.SUNKEN)
         self.bg_color_canvas.pack(side=tk.LEFT, padx=(0, 5))
         
         ttk.Button(bg_frame, text="Choose", command=self.choose_bg_color).pack(side=tk.LEFT)
         
-        # Font size (char_height)
-        ttk.Label(text_frame, text="Character Height:").grid(row=4, column=0, sticky=tk.W, pady=(0, 5))
-        
-        self.font_size_var = tk.IntVar(value=16)
-        font_size_frame = ttk.Frame(text_frame)
-        font_size_frame.grid(row=4, column=1, sticky=tk.W, pady=(0, 5))
-        
-        ttk.Radiobutton(font_size_frame, text="16px", variable=self.font_size_var, value=16).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Radiobutton(font_size_frame, text="32px", variable=self.font_size_var, value=32).pack(side=tk.LEFT)
-        
         # Animation
-        ttk.Label(text_frame, text="Animation:").grid(row=5, column=0, sticky=tk.W, pady=(0, 5))
+        ttk.Label(text_frame, text="Animation:").grid(row=4, column=0, sticky=tk.W, pady=(0, 5))
         
         self.animation_var = tk.IntVar(value=0)
         animation_frame = ttk.Frame(text_frame)
-        animation_frame.grid(row=5, column=1, sticky=tk.W, pady=(0, 5))
+        animation_frame.grid(row=4, column=1, sticky=tk.W, pady=(0, 5))
         
         animations = [
             ("Static", 0),
@@ -281,21 +356,21 @@ class iPixelController:
             ttk.Radiobutton(animation_frame, text=text, variable=self.animation_var, value=value).pack(side=tk.LEFT, padx=(0, 5))
         
         # Speed (for animations)
-        ttk.Label(text_frame, text="Speed:").grid(row=6, column=0, sticky=tk.W, pady=(0, 5))
+        ttk.Label(text_frame, text="Speed:").grid(row=5, column=0, sticky=tk.W, pady=(0, 5))
         
         self.speed_var = tk.IntVar(value=50)
         speed_frame = ttk.Frame(text_frame)
-        speed_frame.grid(row=6, column=1, sticky=tk.W, pady=(0, 5))
+        speed_frame.grid(row=5, column=1, sticky=tk.W, pady=(0, 5))
         
         ttk.Scale(speed_frame, from_=10, to=100, variable=self.speed_var, orient=tk.HORIZONTAL, length=200).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Label(speed_frame, textvariable=self.speed_var).pack(side=tk.LEFT)
         
         # Rainbow mode (animated color effects)
-        ttk.Label(text_frame, text="Rainbow Effect:").grid(row=7, column=0, sticky=tk.W, pady=(0, 5))
+        ttk.Label(text_frame, text="Rainbow Effect:").grid(row=6, column=0, sticky=tk.W, pady=(0, 5))
         
         self.rainbow_var = tk.IntVar(value=0)
         rainbow_frame = ttk.Frame(text_frame)
-        rainbow_frame.grid(row=7, column=1, sticky=tk.W, pady=(0, 5))
+        rainbow_frame.grid(row=6, column=1, sticky=tk.W, pady=(0, 5))
         
         rainbow_row1 = ttk.Frame(rainbow_frame)
         rainbow_row1.pack(anchor=tk.W)
@@ -326,37 +401,32 @@ class iPixelController:
         sprite_frame.grid(row=9, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
         sprite_frame.columnconfigure(1, weight=1)
 
-        ttk.Label(sprite_frame, text="Sprite Sheet:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
-        self.text_sprite_path_var = tk.StringVar(value=self.settings.get('text_sprite_path', ''))
-        ttk.Entry(sprite_frame, textvariable=self.text_sprite_path_var, width=28).grid(
-            row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 5)
-        )
-        ttk.Button(sprite_frame, text="Browse", command=self.browse_text_sprite_file).grid(row=0, column=2)
-
         self.text_use_sprite_var = tk.BooleanVar(value=self.settings.get('text_use_sprite_font', False))
         ttk.Checkbutton(
             sprite_frame,
-            text="Use sprite font (render text as image)",
+            text="Use sprite font",
             variable=self.text_use_sprite_var,
             command=self.update_text_sprite_settings
-        ).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(5, 0))
+        ).grid(row=0, column=0, sticky=tk.W)
 
-        sprite_opts = ttk.Frame(sprite_frame)
-        sprite_opts.grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=(5, 0))
-        ttk.Label(sprite_opts, text="Glyph order:").pack(side=tk.LEFT, padx=(0, 5))
-        self.text_sprite_order_var = tk.StringVar(value=self.settings.get('text_sprite_order', '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/ '))
-        ttk.Entry(sprite_opts, textvariable=self.text_sprite_order_var, width=24).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Label(sprite_opts, text="Columns:").pack(side=tk.LEFT, padx=(0, 5))
-        self.text_sprite_cols_var = tk.IntVar(value=self.settings.get('text_sprite_cols', 11))
-        ttk.Spinbox(sprite_opts, from_=1, to=64, textvariable=self.text_sprite_cols_var, width=5).pack(side=tk.LEFT)
+        ttk.Label(sprite_frame, text="Font:").grid(row=1, column=0, sticky=tk.W, pady=(5, 0))
+        self.text_sprite_font_var = tk.StringVar(value=self.settings.get('text_sprite_font_name', ''))
+        self.text_sprite_font_combo = ttk.Combobox(sprite_frame, textvariable=self.text_sprite_font_var, state="readonly")
+        self.text_sprite_font_combo.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(5, 0), pady=(5, 0))
+        self.text_sprite_font_combo.bind('<<ComboboxSelected>>', lambda e: self.update_text_sprite_settings())
 
         ttk.Label(sprite_frame, text="Note: Sprite font ignores animation/rainbow.", foreground="gray").grid(
-            row=3, column=0, columnspan=3, sticky=tk.W, pady=(2, 0)
+            row=2, column=0, columnspan=2, sticky=tk.W, pady=(2, 0)
         )
+
+        ttk.Label(text_frame, text="Static delay (s):").grid(row=10, column=0, sticky=tk.W, pady=(0, 5))
+        self.text_static_delay_var = tk.IntVar(value=self.settings.get('text_static_delay_seconds', 2))
+        ttk.Spinbox(text_frame, from_=1, to=30, textvariable=self.text_static_delay_var, width=5,
+                    command=self.update_text_sprite_settings).grid(row=10, column=1, sticky=tk.W, pady=(0, 5))
         
         # Send button
         self.send_text_btn = ttk.Button(text_frame, text="Send Text", command=self.send_text, state=tk.DISABLED)
-        self.send_text_btn.grid(row=10, column=0, columnspan=2, pady=(10, 0))
+        self.send_text_btn.grid(row=11, column=0, columnspan=2, pady=(10, 0))
         
     def create_image_tab(self):
         """Create the image control tab"""
@@ -477,7 +547,7 @@ class iPixelController:
         
         ttk.Label(color_frame, text="Background:").pack(side=tk.LEFT, padx=(0, 5))
         
-        self.clock_bg_color = "#000000"
+        self.clock_bg_color = "#FFFFFF"
         self.clock_bg_color_canvas = tk.Canvas(color_frame, width=30, height=20, 
                                                bg=self.clock_bg_color, relief=tk.SUNKEN)
         self.clock_bg_color_canvas.pack(side=tk.LEFT, padx=(0, 5))
@@ -508,37 +578,28 @@ class iPixelController:
                    width=5).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Label(interval_frame, text="second(s)").pack(side=tk.LEFT)
 
-        # Sprite sheet (single file) for time glyphs
+        # Sprite font for time glyphs
         sprite_frame = ttk.Frame(self.custom_frame)
         sprite_frame.grid(row=len(formats)+5, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
         sprite_frame.columnconfigure(1, weight=1)
 
-        ttk.Label(sprite_frame, text="Sprite Sheet:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
-        self.clock_time_sprite_path_var = tk.StringVar(value=self.settings.get('clock_time_sprite_path', ''))
-        ttk.Entry(sprite_frame, textvariable=self.clock_time_sprite_path_var, width=28).grid(
-            row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 5)
-        )
-        ttk.Button(sprite_frame, text="Browse", command=self.browse_clock_time_sprite_file).grid(row=0, column=2)
-
         self.clock_use_time_sprite_var = tk.BooleanVar(value=self.settings.get('clock_use_time_sprite', False))
-        ttk.Checkbutton(sprite_frame,
-                         text="Use sprite sheet (digits in one file)",
-                         variable=self.clock_use_time_sprite_var,
-                         command=self.update_clock_time_sprite_settings
-                         ).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(5, 0))
+        ttk.Checkbutton(
+            sprite_frame,
+            text="Use sprite font",
+            variable=self.clock_use_time_sprite_var,
+            command=self.update_clock_sprite_settings
+        ).grid(row=0, column=0, sticky=tk.W)
 
-        sprite_opts = ttk.Frame(sprite_frame)
-        sprite_opts.grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=(5, 0))
-        ttk.Label(sprite_opts, text="Glyph order:").pack(side=tk.LEFT, padx=(0, 5))
-        self.clock_time_sprite_order_var = tk.StringVar(value=self.settings.get('clock_time_sprite_order', '0123456789:'))
-        ttk.Entry(sprite_opts, textvariable=self.clock_time_sprite_order_var, width=18).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Label(sprite_opts, text="Columns:").pack(side=tk.LEFT, padx=(0, 5))
-        self.clock_time_sprite_cols_var = tk.IntVar(value=self.settings.get('clock_time_sprite_cols', 11))
-        ttk.Spinbox(sprite_opts, from_=1, to=32, textvariable=self.clock_time_sprite_cols_var, width=5).pack(side=tk.LEFT)
+        ttk.Label(sprite_frame, text="Font:").grid(row=1, column=0, sticky=tk.W, pady=(5, 0))
+        self.clock_sprite_font_var = tk.StringVar(value=self.settings.get('clock_time_sprite_font_name', ''))
+        self.clock_sprite_font_combo = ttk.Combobox(sprite_frame, textvariable=self.clock_sprite_font_var, state="readonly")
+        self.clock_sprite_font_combo.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(5, 0), pady=(5, 0))
+        self.clock_sprite_font_combo.bind('<<ComboboxSelected>>', lambda e: self.update_clock_sprite_settings())
 
         self.clock_image_status_var = tk.StringVar(value="Clock status will appear here")
         ttk.Label(sprite_frame, textvariable=self.clock_image_status_var, foreground="gray").grid(
-            row=3, column=0, columnspan=3, sticky=tk.W, pady=(2, 0)
+            row=2, column=0, columnspan=2, sticky=tk.W, pady=(2, 0)
         )
         
         # Countdown timer frame
@@ -617,16 +678,39 @@ class iPixelController:
         
         ttk.Label(countdown_color_frame, text="Background:").pack(side=tk.LEFT, padx=(0, 5))
         
-        self.countdown_bg_color = "#000000"
+        self.countdown_bg_color = "#FFFFFF"
         self.countdown_bg_color_canvas = tk.Canvas(countdown_color_frame, width=30, height=20, 
                                                    bg=self.countdown_bg_color, relief=tk.SUNKEN)
         self.countdown_bg_color_canvas.pack(side=tk.LEFT, padx=(0, 5))
         
         ttk.Button(countdown_color_frame, text="Choose", command=self.choose_countdown_bg_color).pack(side=tk.LEFT)
+
+        # Countdown sprite font
+        countdown_sprite_frame = ttk.Frame(self.countdown_frame)
+        countdown_sprite_frame.grid(row=11, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+
+        self.countdown_use_sprite_var = tk.BooleanVar(value=self.settings.get('countdown_use_sprite_font', False))
+        ttk.Checkbutton(
+            countdown_sprite_frame,
+            text="Use sprite font",
+            variable=self.countdown_use_sprite_var,
+            command=self.update_countdown_sprite_settings
+        ).grid(row=0, column=0, sticky=tk.W)
+
+        ttk.Label(countdown_sprite_frame, text="Font:").grid(row=1, column=0, sticky=tk.W, pady=(5, 0))
+        self.countdown_sprite_font_var = tk.StringVar(value=self.settings.get('countdown_sprite_font_name', ''))
+        self.countdown_sprite_font_combo = ttk.Combobox(countdown_sprite_frame, textvariable=self.countdown_sprite_font_var, state="readonly")
+        self.countdown_sprite_font_combo.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(5, 0), pady=(5, 0))
+        self.countdown_sprite_font_combo.bind('<<ComboboxSelected>>', lambda e: self.update_countdown_sprite_settings())
+
+        ttk.Label(self.countdown_frame, text="Static delay (s):").grid(row=12, column=0, sticky=tk.W, pady=(5, 0))
+        self.countdown_static_delay_var = tk.IntVar(value=self.settings.get('countdown_static_delay_seconds', 2))
+        ttk.Spinbox(self.countdown_frame, from_=1, to=60, textvariable=self.countdown_static_delay_var, width=5,
+                command=self.update_countdown_sprite_settings).grid(row=12, column=1, sticky=tk.W, pady=(5, 0))
         
         # Countdown animation
         countdown_anim_frame = ttk.Frame(self.countdown_frame)
-        countdown_anim_frame.grid(row=11, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+        countdown_anim_frame.grid(row=13, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
         
         ttk.Label(countdown_anim_frame, text="Animation:").pack(side=tk.LEFT, padx=(0, 5))
         
@@ -644,7 +728,7 @@ class iPixelController:
         
         # Update interval
         countdown_interval_frame = ttk.Frame(self.countdown_frame)
-        countdown_interval_frame.grid(row=12, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+        countdown_interval_frame.grid(row=14, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
         
         ttk.Label(countdown_interval_frame, text="Update every:").pack(side=tk.LEFT, padx=(0, 5))
         
@@ -672,11 +756,6 @@ class iPixelController:
         # Update initial visibility
         self.update_clock_options()
         
-    def create_settings_tab(self):
-        """Create the settings control tab"""
-        settings_frame = ttk.Frame(self.notebook, padding="10")
-        self.notebook.add(settings_frame, text="Settings")
-    
     def create_stock_tab(self):
         """Create the stock market display tab"""
         stock_frame = ttk.Frame(self.notebook, padding="10")
@@ -717,36 +796,34 @@ class iPixelController:
         ttk.Radiobutton(format_frame, text="Ticker + Price", 
                        variable=self.stock_format_var, value="ticker_price").pack(anchor=tk.W)
         
-        # Text color
-        ttk.Label(stock_frame, text="Text Color:").grid(row=3, column=0, sticky=tk.W, pady=(10, 5))
-        
-        stock_color_frame = ttk.Frame(stock_frame)
-        stock_color_frame.grid(row=3, column=1, sticky=tk.W, pady=(10, 5))
-        
-        self.stock_text_color = "#00FF00"
-        self.stock_color_canvas = tk.Canvas(stock_color_frame, width=30, height=20, 
-                                           bg=self.stock_text_color, relief=tk.SUNKEN)
-        self.stock_color_canvas.pack(side=tk.LEFT, padx=(0, 5))
-        
-        ttk.Button(stock_color_frame, text="Choose", command=self.choose_stock_color).pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Auto color based on change
-        self.stock_auto_color_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(stock_color_frame, text="Auto color (green=up, red=down)", 
-                       variable=self.stock_auto_color_var).pack(side=tk.LEFT)
-        
         # Background color
-        ttk.Label(stock_frame, text="Background:").grid(row=4, column=0, sticky=tk.W, pady=(0, 5))
+        ttk.Label(stock_frame, text="Background:").grid(row=3, column=0, sticky=tk.W, pady=(0, 5))
         
         stock_bg_frame = ttk.Frame(stock_frame)
-        stock_bg_frame.grid(row=4, column=1, sticky=tk.W, pady=(0, 5))
+        stock_bg_frame.grid(row=3, column=1, sticky=tk.W, pady=(0, 5))
         
-        self.stock_bg_color = "#000000"
+        self.stock_bg_color = "#FFFFFF"
         self.stock_bg_canvas = tk.Canvas(stock_bg_frame, width=30, height=20, 
                                         bg=self.stock_bg_color, relief=tk.SUNKEN)
         self.stock_bg_canvas.pack(side=tk.LEFT, padx=(0, 5))
         
         ttk.Button(stock_bg_frame, text="Choose", command=self.choose_stock_bg_color).pack(side=tk.LEFT)
+
+        # Sprite font
+        stock_sprite_frame = ttk.Frame(stock_frame)
+        stock_sprite_frame.grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+
+        self.stock_use_sprite_var = tk.BooleanVar(value=True)
+        ttk.Label(stock_sprite_frame, text="Sprite Font:").grid(row=0, column=0, sticky=tk.W)
+        self.stock_sprite_font_var = tk.StringVar(value=self.settings.get('stock_sprite_font_name', ''))
+        self.stock_sprite_font_combo = ttk.Combobox(stock_sprite_frame, textvariable=self.stock_sprite_font_var, state="readonly")
+        self.stock_sprite_font_combo.grid(row=0, column=1, sticky=tk.W, padx=(5, 0))
+        self.stock_sprite_font_combo.bind('<<ComboboxSelected>>', lambda e: self.update_stock_sprite_settings())
+
+        ttk.Label(stock_sprite_frame, text="Static delay (s):").grid(row=1, column=0, sticky=tk.W, pady=(5, 0))
+        self.stock_static_delay_var = tk.IntVar(value=self.settings.get('stock_static_delay_seconds', 2))
+        ttk.Spinbox(stock_sprite_frame, from_=1, to=30, textvariable=self.stock_static_delay_var, width=5,
+            command=self.update_stock_sprite_settings).grid(row=1, column=1, sticky=tk.W, pady=(5, 0))
         
         # Animation
         ttk.Label(stock_frame, text="Animation:").grid(row=5, column=0, sticky=tk.W, pady=(10, 5))
@@ -909,12 +986,6 @@ class iPixelController:
                     
                     self.stock_info_label.config(text=info_text, foreground=change_color)
                     self.send_stock_btn.config(state=tk.NORMAL)
-                    
-                    # Auto-update color if enabled
-                    if self.stock_auto_color_var.get():
-                        color = "#00FF00" if change >= 0 else "#FF0000"
-                        self.stock_text_color = color
-                        self.stock_color_canvas.config(bg=color)
                 
                 self.root.after(0, update_ui)
                 
@@ -941,6 +1012,10 @@ class iPixelController:
         
         # Stop any running stock auto-refresh from presets
         self.stop_stock_refresh()
+        self._stop_sprite_scroll()
+        if self.stock_static_timer:
+            self.root.after_cancel(self.stock_static_timer)
+            self.stock_static_timer = None
         
         # Format text based on selected format
         format_type = self.stock_format_var.get()
@@ -957,47 +1032,85 @@ class iPixelController:
         else:  # ticker_price
             text = f"{stock['ticker']} {price_str}"
         
-        # Send to display
-        def send_task():
-            try:
-                text_color = self.stock_text_color.lstrip('#')
-                bg_color = self.stock_bg_color.lstrip('#')
-                
-                # Invert speed: 1=slowest (100), 100=fastest (1)
-                speed = 101 - self.stock_speed_var.get()
-                
-                result = self.client.send_text(
-                    text,
-                    char_height=16,
-                    color=text_color,
-                    bg_color=bg_color,
-                    animation=self.stock_animation_var.get(),
-                    speed=speed,
-                    rainbow_mode=0
-                )
-                
-                if asyncio.iscoroutine(result):
-                    self.run_async(result)
-                
-                # Schedule auto-refresh if enabled
-                if self.stock_auto_refresh_var.get():
-                    def auto_refresh():
-                        self.fetch_stock_data()
-                        # Wait a bit for data to be fetched, then send
-                        self.root.after(2000, self.send_stock_to_display)
-                    
-                    # Cancel previous job if exists
-                    if self.stock_refresh_job:
-                        self.root.after_cancel(self.stock_refresh_job)
-                    
-                    interval_ms = self.stock_refresh_interval_var.get() * 1000
-                    self.stock_refresh_job = self.root.after(interval_ms, auto_refresh)
-                
-            except Exception as e:
-                error_msg = str(e)
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to send: {error_msg}"))
-        
-        threading.Thread(target=send_task, daemon=True).start()
+        def send_text_value(value_text):
+            def send_task():
+                try:
+                    font = self._get_sprite_font_by_name(self.stock_sprite_font_var.get().strip())
+                    if not font:
+                        raise Exception("Sprite font not found")
+                    anim = self.stock_animation_var.get()
+                    if anim in (1, 2):
+                        line_img, sprite_err = self._build_sprite_text_line_image(
+                            value_text,
+                            font.get('path', ''),
+                            font.get('order', ''),
+                            font.get('cols', 1),
+                            self.stock_bg_color
+                        )
+                        if line_img is None:
+                            raise Exception(sprite_err or "Sprite render failed")
+                        direction = "right" if anim == 2 else "left"
+                        self._start_sprite_scroll(line_img, self.stock_bg_color, self.stock_speed_var.get(), direction=direction)
+                        return
+                    sprite_img, sprite_err = self._build_sprite_text_image(
+                        value_text,
+                        font.get('path', ''),
+                        font.get('order', ''),
+                        font.get('cols', 1),
+                        self.stock_bg_color
+                    )
+                    if sprite_img is None:
+                        raise Exception(sprite_err or "Sprite render failed")
+                    tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_stock_sprite.png')
+                    sprite_img.save(tmp_path, 'PNG')
+                    result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+                    if asyncio.iscoroutine(result):
+                        self.run_async(result)
+                except Exception as e:
+                    error_msg = str(e)
+                    self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to send: {error_msg}"))
+
+            threading.Thread(target=send_task, daemon=True).start()
+
+        def start_static_cycle():
+            if self.stock_static_timer:
+                self.root.after_cancel(self.stock_static_timer)
+            state = {'show_ticker': True}
+            delay_ms = max(1, int(self.stock_static_delay_var.get() or 2)) * 1000
+
+            def tick():
+                if format_type == "ticker_price":
+                    send_text_value(stock['ticker'] if state['show_ticker'] else price_str)
+                    state['show_ticker'] = not state['show_ticker']
+                elif format_type == "price_change":
+                    change_symbol = "↑" if stock['change'] >= 0 else "↓"
+                    change_text = f"{change_symbol}{abs(stock['change_percent']):.1f}%"
+                    send_text_value(price_str if state['show_ticker'] else change_text)
+                    state['show_ticker'] = not state['show_ticker']
+                else:
+                    send_text_value(price_str)
+                self.stock_static_timer = self.root.after(delay_ms, tick)
+
+            tick()
+
+        if self.stock_animation_var.get() == 0 and format_type in ("ticker_price", "price_change"):
+            start_static_cycle()
+        else:
+            send_text_value(text)
+
+        # Schedule auto-refresh if enabled
+        if self.stock_auto_refresh_var.get():
+            def auto_refresh():
+                self.fetch_stock_data()
+                # Wait a bit for data to be fetched, then send
+                self.root.after(2000, self.send_stock_to_display)
+
+            # Cancel previous job if exists
+            if self.stock_refresh_job:
+                self.root.after_cancel(self.stock_refresh_job)
+
+            interval_ms = self.stock_refresh_interval_var.get() * 1000
+            self.stock_refresh_job = self.root.after(interval_ms, auto_refresh)
     
     def save_stock_preset(self):
         """Save current stock configuration as a preset"""
@@ -1026,13 +1139,13 @@ class iPixelController:
                 "type": "stock",
                 "ticker": self.stock_ticker_var.get(),
                 "format": self.stock_format_var.get(),
-                "text_color": self.stock_text_color,
                 "bg_color": self.stock_bg_color,
                 "animation": self.stock_animation_var.get(),
                 "speed": self.stock_speed_var.get(),
-                "auto_color": self.stock_auto_color_var.get(),
                 "auto_refresh": self.stock_auto_refresh_var.get(),
-                "refresh_interval": self.stock_refresh_interval_var.get()
+                "refresh_interval": self.stock_refresh_interval_var.get(),
+                "stock_sprite_font_name": self.stock_sprite_font_var.get().strip(),
+                "stock_static_delay_seconds": int(self.stock_static_delay_var.get() or 2)
             }
             
             self.presets.append(preset)
@@ -1082,75 +1195,50 @@ class iPixelController:
         ttk.Label(channel_frame, text="(e.g., @MrBeast or UCX6OQ3DkcsbYNE6H8uQQuVA)", 
                  foreground="gray", font=('TkDefaultFont', 8)).grid(row=0, column=1, sticky=tk.W)
         
-        # Display format
-        ttk.Label(youtube_frame, text="Display Format:").grid(row=3, column=0, sticky=tk.W, pady=(10, 5))
-        
-        self.youtube_format_var = tk.StringVar(value="subs_views")
-        format_frame = ttk.Frame(youtube_frame)
-        format_frame.grid(row=3, column=1, sticky=tk.W, pady=(10, 5))
-        
-        ttk.Radiobutton(format_frame, text="Subscribers + Views", 
-                       variable=self.youtube_format_var, value="subs_views").pack(anchor=tk.W)
-        ttk.Radiobutton(format_frame, text="Subscribers Only", 
-                       variable=self.youtube_format_var, value="subs_only").pack(anchor=tk.W)
-        ttk.Radiobutton(format_frame, text="Channel + Subscribers", 
-                       variable=self.youtube_format_var, value="channel_subs").pack(anchor=tk.W)
-        ttk.Radiobutton(format_frame, text="Latest Video Views", 
-                       variable=self.youtube_format_var, value="latest_views").pack(anchor=tk.W)
-        
-        # Colors
-        ttk.Label(youtube_frame, text="Text Color:").grid(row=4, column=0, sticky=tk.W, pady=(10, 5))
-        
-        yt_color_frame = ttk.Frame(youtube_frame)
-        yt_color_frame.grid(row=4, column=1, sticky=tk.W, pady=(10, 5))
-        
-        self.youtube_text_color = "#FF0000"
-        self.youtube_color_canvas = tk.Canvas(yt_color_frame, width=30, height=20, 
-                                             bg=self.youtube_text_color, relief=tk.SUNKEN)
-        self.youtube_color_canvas.pack(side=tk.LEFT, padx=(0, 5))
-        
-        ttk.Button(yt_color_frame, text="Choose", command=self.choose_youtube_color).pack(side=tk.LEFT)
-        
         # Background
-        ttk.Label(youtube_frame, text="Background:").grid(row=5, column=0, sticky=tk.W, pady=(0, 5))
+        ttk.Label(youtube_frame, text="Background:").grid(row=3, column=0, sticky=tk.W, pady=(0, 5))
         
         yt_bg_frame = ttk.Frame(youtube_frame)
-        yt_bg_frame.grid(row=5, column=1, sticky=tk.W, pady=(0, 5))
+        yt_bg_frame.grid(row=3, column=1, sticky=tk.W, pady=(0, 5))
         
-        self.youtube_bg_color = "#000000"
+        self.youtube_bg_color = "#FFFFFF"
         self.youtube_bg_canvas = tk.Canvas(yt_bg_frame, width=30, height=20, 
                                           bg=self.youtube_bg_color, relief=tk.SUNKEN)
         self.youtube_bg_canvas.pack(side=tk.LEFT, padx=(0, 5))
         
         ttk.Button(yt_bg_frame, text="Choose", command=self.choose_youtube_bg_color).pack(side=tk.LEFT)
         
-        # Animation
-        ttk.Label(youtube_frame, text="Animation:").grid(row=6, column=0, sticky=tk.W, pady=(10, 5))
-        
-        self.youtube_animation_var = tk.IntVar(value=1)
-        yt_anim_frame = ttk.Frame(youtube_frame)
-        yt_anim_frame.grid(row=6, column=1, sticky=tk.W, pady=(10, 5))
-        
-        for text, value in [("Static", 0), ("Scroll Left", 1), ("Scroll Right", 2)]:
-            ttk.Radiobutton(yt_anim_frame, text=text, variable=self.youtube_animation_var, 
-                          value=value).pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Speed
-        ttk.Label(youtube_frame, text="Scroll Speed:").grid(row=7, column=0, sticky=tk.W, pady=(0, 5))
-        
-        self.youtube_speed_var = tk.IntVar(value=30)
-        yt_speed_frame = ttk.Frame(youtube_frame)
-        yt_speed_frame.grid(row=7, column=1, sticky=(tk.W, tk.E), pady=(0, 5))
-        
-        ttk.Scale(yt_speed_frame, from_=1, to=100, variable=self.youtube_speed_var, 
-                 orient=tk.HORIZONTAL, length=200).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Label(yt_speed_frame, textvariable=self.youtube_speed_var).pack(side=tk.LEFT)
-        
+        # Sprite font
+        yt_sprite_frame = ttk.Frame(youtube_frame)
+        yt_sprite_frame.grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+        yt_sprite_frame.columnconfigure(1, weight=1)
+
+        self.youtube_use_sprite_var = tk.BooleanVar(value=True)
+        ttk.Label(yt_sprite_frame, text="Sprite Font:").grid(row=0, column=0, sticky=tk.W, pady=(5, 0))
+        self.youtube_sprite_font_var = tk.StringVar(value=self.settings.get('youtube_sprite_font_name', ''))
+        self.youtube_sprite_font_combo = ttk.Combobox(yt_sprite_frame, textvariable=self.youtube_sprite_font_var, state="readonly")
+        self.youtube_sprite_font_combo.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(5, 0), pady=(5, 0))
+        self.youtube_sprite_font_combo.bind('<<ComboboxSelected>>', lambda e: self.update_youtube_sprite_settings())
+
+        # Logo before stats
+        yt_logo_frame = ttk.Frame(youtube_frame)
+        yt_logo_frame.grid(row=5, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+        yt_logo_frame.columnconfigure(1, weight=1)
+
+        self.youtube_show_logo_var = tk.BooleanVar(value=True)
+        ttk.Label(yt_logo_frame, text="Logo PNG:").grid(row=0, column=0, sticky=tk.W, pady=(5, 0))
+        self.youtube_logo_path_var = tk.StringVar(value=self.settings.get('youtube_logo_path', os.path.join("Gallery", "Sprites", "YT-btn.png")))
+        ttk.Entry(yt_logo_frame, textvariable=self.youtube_logo_path_var, width=40).grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(5, 5), pady=(5, 0))
+        ttk.Button(yt_logo_frame, text="Browse", command=self.browse_youtube_logo).grid(row=0, column=2, sticky=tk.W, pady=(5, 0))
+        ttk.Label(yt_logo_frame, text="Supported resolution: 14x16 PNG", foreground="gray").grid(
+            row=1, column=0, columnspan=3, sticky=tk.W, pady=(2, 0)
+        )
+
         # Auto-refresh
-        ttk.Label(youtube_frame, text="Auto Refresh:").grid(row=8, column=0, sticky=tk.W, pady=(10, 5))
-        
+        ttk.Label(youtube_frame, text="Auto Refresh:").grid(row=6, column=0, sticky=tk.W, pady=(10, 5))
+
         yt_refresh_frame = ttk.Frame(youtube_frame)
-        yt_refresh_frame.grid(row=8, column=1, sticky=tk.W, pady=(10, 5))
+        yt_refresh_frame.grid(row=6, column=1, sticky=tk.W, pady=(10, 5))
         
         self.youtube_auto_refresh_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(yt_refresh_frame, text="Enable auto-refresh every", 
@@ -1163,7 +1251,7 @@ class iPixelController:
         
         # Stats display
         self.youtube_info_frame = ttk.LabelFrame(youtube_frame, text="Channel Statistics", padding="10")
-        self.youtube_info_frame.grid(row=9, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(15, 10))
+        self.youtube_info_frame.grid(row=7, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(15, 10))
         
         self.youtube_info_label = ttk.Label(self.youtube_info_frame, text="Fetch channel data to see statistics", 
                                            foreground="gray")
@@ -1171,7 +1259,7 @@ class iPixelController:
         
         # Buttons
         yt_btn_frame = ttk.Frame(youtube_frame)
-        yt_btn_frame.grid(row=10, column=0, columnspan=2, pady=(10, 0))
+        yt_btn_frame.grid(row=8, column=0, columnspan=2, pady=(10, 0))
         
         ttk.Button(yt_btn_frame, text="📊 Fetch Stats", 
                   command=self.fetch_youtube_stats).pack(side=tk.LEFT, padx=(0, 5))
@@ -1275,7 +1363,7 @@ class iPixelController:
         weather_bg_frame = ttk.Frame(weather_frame)
         weather_bg_frame.grid(row=6, column=1, sticky=tk.W, pady=(0, 5))
         
-        self.weather_bg_color = "#000000"
+        self.weather_bg_color = "#FFFFFF"
         self.weather_bg_canvas = tk.Canvas(weather_bg_frame, width=30, height=20, 
                                           bg=self.weather_bg_color, relief=tk.SUNKEN)
         self.weather_bg_canvas.pack(side=tk.LEFT, padx=(0, 5))
@@ -1571,26 +1659,8 @@ class iPixelController:
                 views = int(stats.get('viewCount', 0))
                 videos = int(stats.get('videoCount', 0))
                 
-                # Get latest video if requested
+                # Latest video lookup removed (single YouTube format)
                 latest_video_views = 0
-                if self.youtube_format_var.get() == "latest_views":
-                    videos_response = youtube.search().list(
-                        channelId=channel_id,
-                        part='id',
-                        order='date',
-                        maxResults=1,
-                        type='video'
-                    ).execute()
-                    
-                    if videos_response.get('items'):
-                        video_id = videos_response['items'][0]['id']['videoId']
-                        video_response = youtube.videos().list(
-                            part='statistics',
-                            id=video_id
-                        ).execute()
-                        
-                        if video_response.get('items'):
-                            latest_video_views = int(video_response['items'][0]['statistics'].get('viewCount', 0))
                 
                 self.current_youtube_data = {
                     'channel_title': channel_title,
@@ -1605,9 +1675,6 @@ class iPixelController:
                     info_text += f"Subscribers: {subscribers:,}\n"
                     info_text += f"Total Views: {views:,}\n"
                     info_text += f"Videos: {videos:,}"
-                    
-                    if latest_video_views > 0:
-                        info_text += f"\nLatest Video: {latest_video_views:,} views"
                     
                     self.youtube_info_label.config(text=info_text, foreground="green")
                     self.send_youtube_btn.config(state=tk.NORMAL)
@@ -1648,52 +1715,129 @@ class iPixelController:
         # Stop any running stock auto-refresh from presets
         self.stop_stock_refresh()
         
-        format_type = self.youtube_format_var.get()
         data = self.current_youtube_data
+        text = self.format_number(data['subscribers'])
+
+        try:
+            subs_value = int(data['subscribers'])
+        except Exception:
+            subs_value = data.get('subscribers', 0) if isinstance(data, dict) else 0
+        subs_digits = len(str(subs_value)) if isinstance(subs_value, int) else 0
+        subs_text = str(subs_value) if subs_digits and subs_digits <= 7 else self.format_number(subs_value)
+
+        self._stop_sprite_scroll()
         
-        if format_type == "subs_views":
-            text = f"{self.format_number(data['subscribers'])} subs {self.format_number(data['views'])} views"
-        elif format_type == "subs_only":
-            text = f"{self.format_number(data['subscribers'])} subscribers"
-        elif format_type == "channel_subs":
-            text = f"{data['channel_title']} {self.format_number(data['subscribers'])}"
-        else:  # latest_views
-            text = f"Latest: {self.format_number(data['latest_video_views'])} views"
-        
-        def send_task():
+        def send_stats():
             try:
-                text_color = self.youtube_text_color.lstrip('#')
-                bg_color = self.youtube_bg_color.lstrip('#')
-                speed = 101 - self.youtube_speed_var.get()
-                
-                result = self.client.send_text(
+                font = self._get_sprite_font_by_name(self.youtube_sprite_font_var.get().strip())
+                if not font:
+                    raise Exception("Sprite font not found")
+                sprite_img, sprite_err = self._build_sprite_text_image(
                     text,
-                    char_height=16,
-                    color=text_color,
-                    bg_color=bg_color,
-                    animation=self.youtube_animation_var.get(),
-                    speed=speed,
-                    rainbow_mode=0
+                    font.get('path', ''),
+                    font.get('order', ''),
+                    font.get('cols', 1),
+                    self.youtube_bg_color
                 )
-                
+                if sprite_img is None:
+                    raise Exception(sprite_err or "Sprite render failed")
+                tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_youtube_sprite.png')
+                sprite_img.save(tmp_path, 'PNG')
+                result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
                 if asyncio.iscoroutine(result):
                     self.run_async(result)
-                
+
                 if self.youtube_auto_refresh_var.get():
                     def auto_refresh():
                         self.fetch_youtube_stats()
                         self.root.after(2000, self.send_youtube_to_display)
-                    
+
                     if self.youtube_refresh_job:
                         self.root.after_cancel(self.youtube_refresh_job)
-                    
+
                     interval_ms = self.youtube_refresh_interval_var.get() * 1000
                     self.youtube_refresh_job = self.root.after(interval_ms, auto_refresh)
-                
             except Exception as e:
                 error_msg = str(e)
                 self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to send: {error_msg}"))
-        
+
+        def _send_logo_inline():
+            logo_path = self._resolve_asset_path(self.youtube_logo_path_var.get().strip())
+            if not logo_path or not os.path.exists(logo_path):
+                return False, f"Logo file not found: {logo_path or self.youtube_logo_path_var.get().strip()}"
+            try:
+                logo = Image.open(logo_path).convert("RGBA")
+                if logo.size != (14, 16):
+                    logo = logo.resize((14, 16), Image.NEAREST)
+
+                canvas = Image.new("RGBA", (64, 16), self.youtube_bg_color)
+                canvas.paste(logo, (0, 0), logo)
+
+                text_x = 14 + 2
+                if self.youtube_use_sprite_var.get():
+                    font = self._get_sprite_font_by_name(self.youtube_sprite_font_var.get().strip())
+                    if not font:
+                        raise Exception("Sprite font not found")
+                    line_img, sprite_err = self._build_sprite_text_line_image(
+                        subs_text,
+                        font.get('path', ''),
+                        font.get('order', ''),
+                        font.get('cols', 1),
+                        self.youtube_bg_color
+                    )
+                    if line_img is None:
+                        raise Exception(sprite_err or "Sprite render failed")
+                    if line_img.height != 16:
+                        line_img = line_img.resize((line_img.width, 16), Image.NEAREST)
+                    max_w = 64 - text_x
+                    if line_img.width > max_w:
+                        line_img = line_img.crop((0, 0, max_w, line_img.height))
+                    paste_x = text_x + max(0, (max_w - line_img.width) // 2)
+                    canvas.paste(line_img, (paste_x, 0))
+                else:
+                    draw = ImageDraw.Draw(canvas)
+                    try:
+                        font = ImageFont.truetype("arial.ttf", 10)
+                    except Exception:
+                        font = ImageFont.load_default()
+                    bbox = draw.textbbox((0, 0), subs_text, font=font)
+                    text_w = bbox[2] - bbox[0]
+                    text_h = bbox[3] - bbox[1]
+                    y = max(0, (16 - text_h) // 2)
+                    x = text_x + max(0, ((64 - text_x) - text_w) // 2)
+                    draw.text((x, y), subs_text, font=font, fill=self.youtube_text_color)
+
+                tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_youtube_logo_inline.png')
+                canvas.convert("RGB").save(tmp_path, 'PNG')
+                result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+                if asyncio.iscoroutine(result):
+                    self.run_async(result)
+                return True, ""
+            except Exception as e:
+                return False, str(e)
+
+        def send_task():
+            try:
+                ok, err = _send_logo_inline()
+                if not ok:
+                    self.root.after(0, lambda: messagebox.showwarning("Logo Not Found", err))
+                else:
+                    if self.youtube_auto_refresh_var.get():
+                        def auto_refresh():
+                            self.fetch_youtube_stats()
+                            self.root.after(2000, self.send_youtube_to_display)
+
+                        if self.youtube_refresh_job:
+                            self.root.after_cancel(self.youtube_refresh_job)
+
+                        interval_ms = self.youtube_refresh_interval_var.get() * 1000
+                        self.youtube_refresh_job = self.root.after(interval_ms, auto_refresh)
+                    return
+                send_stats()
+            except Exception as e:
+                error_msg = str(e)
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to send: {error_msg}"))
+
         threading.Thread(target=send_task, daemon=True).start()
     
     def save_youtube_preset(self):
@@ -1721,13 +1865,13 @@ class iPixelController:
                 "name": name,
                 "type": "youtube",
                 "channel": self.youtube_channel_var.get(),
-                "format": self.youtube_format_var.get(),
-                "text_color": self.youtube_text_color,
                 "bg_color": self.youtube_bg_color,
-                "animation": self.youtube_animation_var.get(),
-                "speed": self.youtube_speed_var.get(),
                 "auto_refresh": self.youtube_auto_refresh_var.get(),
-                "refresh_interval": self.youtube_refresh_interval_var.get()
+                "refresh_interval": self.youtube_refresh_interval_var.get(),
+                "youtube_use_sprite_font": self.youtube_use_sprite_var.get(),
+                "youtube_sprite_font_name": self.youtube_sprite_font_var.get().strip(),
+                "youtube_show_logo": self.youtube_show_logo_var.get(),
+                "youtube_logo_path": self.youtube_logo_path_var.get().strip()
             }
             
             self.presets.append(preset)
@@ -1780,6 +1924,7 @@ class iPixelController:
 
     def _get_temp_image_path(self, temp_value, folder):
         """Resolve temperature image path based on current temp."""
+        folder = self._resolve_asset_path(folder)
         if not folder:
             return None
         temp_int = int(round(temp_value))
@@ -1886,6 +2031,10 @@ class iPixelController:
         
         # Stop any running stock auto-refresh
         self.stop_stock_refresh()
+        self._stop_sprite_scroll()
+        if self.text_static_timer:
+            self.root.after_cancel(self.text_static_timer)
+            self.text_static_timer = None
         
         format_type = self.weather_format_var.get()
         data = self.current_weather_data
@@ -2596,6 +2745,8 @@ class iPixelController:
         """Create the settings control tab"""
         settings_frame = ttk.Frame(self.notebook, padding="10")
         self.notebook.add(settings_frame, text="Settings")
+
+        settings_frame.columnconfigure(1, weight=1)
         
         # Brightness
         ttk.Label(settings_frame, text="Brightness:").grid(row=0, column=0, sticky=tk.W, pady=(0, 10))
@@ -2621,6 +2772,49 @@ class iPixelController:
         
         self.power_off_btn = ttk.Button(power_frame, text="Power OFF", command=lambda: self.set_power(False), state=tk.DISABLED)
         self.power_off_btn.pack(side=tk.LEFT)
+
+        # Sprite font library
+        sprite_frame = ttk.LabelFrame(settings_frame, text="Sprite Fonts", padding="10")
+        sprite_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
+        sprite_frame.columnconfigure(1, weight=1)
+
+        self.sprite_font_listbox = tk.Listbox(sprite_frame, height=6)
+        self.sprite_font_listbox.grid(row=0, column=0, rowspan=4, sticky=(tk.N, tk.S, tk.W))
+        self.sprite_font_listbox.bind('<<ListboxSelect>>', self._on_sprite_font_select)
+
+        list_scroll = ttk.Scrollbar(sprite_frame, orient=tk.VERTICAL, command=self.sprite_font_listbox.yview)
+        list_scroll.grid(row=0, column=1, rowspan=4, sticky=(tk.N, tk.S))
+        self.sprite_font_listbox.configure(yscrollcommand=list_scroll.set)
+
+        form_frame = ttk.Frame(sprite_frame)
+        form_frame.grid(row=0, column=2, rowspan=4, sticky=(tk.W, tk.E))
+        form_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(form_frame, text="Name:").grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
+        self.sprite_font_name_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=self.sprite_font_name_var, width=24).grid(row=0, column=1, sticky=(tk.W, tk.E), pady=(0, 5))
+
+        ttk.Label(form_frame, text="Sprite Sheet:").grid(row=1, column=0, sticky=tk.W, pady=(0, 5))
+        self.sprite_font_path_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=self.sprite_font_path_var, width=24).grid(row=1, column=1, sticky=(tk.W, tk.E), pady=(0, 5))
+        ttk.Button(form_frame, text="Browse", command=self._browse_sprite_font_file).grid(row=1, column=2, padx=(5, 0))
+
+        ttk.Label(form_frame, text="Glyph order:").grid(row=2, column=0, sticky=tk.W, pady=(0, 5))
+        self.sprite_font_order_var = tk.StringVar(value='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/ ')
+        ttk.Entry(form_frame, textvariable=self.sprite_font_order_var, width=24).grid(row=2, column=1, sticky=(tk.W, tk.E), pady=(0, 5))
+
+        ttk.Label(form_frame, text="Columns:").grid(row=3, column=0, sticky=tk.W)
+        self.sprite_font_cols_var = tk.IntVar(value=71)
+        ttk.Spinbox(form_frame, from_=1, to=64, textvariable=self.sprite_font_cols_var, width=6).grid(row=3, column=1, sticky=tk.W)
+
+        btn_frame = ttk.Frame(sprite_frame)
+        btn_frame.grid(row=4, column=0, columnspan=3, sticky=tk.W, pady=(8, 0))
+        ttk.Button(btn_frame, text="Add", command=self._add_sprite_font).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(btn_frame, text="Update", command=self._update_sprite_font).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(btn_frame, text="Delete", command=self._delete_sprite_font).pack(side=tk.LEFT)
+
+        self._refresh_sprite_font_listbox()
+        self._refresh_sprite_font_dropdowns()
         
     def start_event_loop(self):
         """Start asyncio event loop in a separate thread"""
@@ -2804,6 +2998,11 @@ class iPixelController:
         if not text:
             messagebox.showwarning("No Text", "Please enter text to display")
             return
+
+        if self.text_static_timer:
+            self.root.after_cancel(self.text_static_timer)
+            self.text_static_timer = None
+        self._stop_sprite_scroll()
         
         # Stop any running live clock
         if hasattr(self, 'clock_running') and self.clock_running:
@@ -2818,53 +3017,171 @@ class iPixelController:
         
         self.send_text_btn.config(state=tk.DISABLED, text="Sending...")
         
-        def send_task():
-            try:
-                if self.text_use_sprite_var.get():
-                    sprite_img, sprite_err = self._build_sprite_text_image(
-                        text,
-                        self.text_sprite_path_var.get().strip(),
-                        self.text_sprite_order_var.get(),
-                        self.text_sprite_cols_var.get(),
-                        self.bg_color
-                    )
-                    if sprite_img is None:
-                        raise Exception(sprite_err or "Sprite render failed")
+        def send_text_value(value_text, anim_override=None):
+            def send_task():
+                try:
+                    anim = anim_override if anim_override is not None else self.animation_var.get()
+                    if self.text_use_sprite_var.get():
+                        font = self._get_sprite_font_by_name(self.text_sprite_font_var.get().strip())
+                        if not font:
+                            raise Exception("Sprite font not found")
+                        if anim in (1, 2):
+                            line_img, sprite_err = self._build_sprite_text_line_image(
+                                value_text,
+                                font.get('path', ''),
+                                font.get('order', ''),
+                                font.get('cols', 1),
+                                self.bg_color
+                            )
+                            if line_img is None:
+                                raise Exception(sprite_err or "Sprite render failed")
+                            direction = "right" if anim == 2 else "left"
+                            self._start_sprite_scroll(line_img, self.bg_color, self.speed_var.get(), direction=direction)
+                            return
+                        sprite_img, sprite_err = self._build_sprite_text_image(
+                            value_text,
+                            font.get('path', ''),
+                            font.get('order', ''),
+                            font.get('cols', 1),
+                            self.bg_color
+                        )
+                        if sprite_img is None:
+                            raise Exception(sprite_err or "Sprite render failed")
 
-                    tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_text_sprite.png')
-                    sprite_img.save(tmp_path, 'PNG')
-                    result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
-                    if asyncio.iscoroutine(result):
-                        self.run_async(result)
-                else:
-                    # Convert hex colors to hex strings (without #)
-                    text_color_hex = self.text_color.lstrip('#')
-                    bg_color_hex = self.bg_color.lstrip('#')
+                        tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_text_sprite.png')
+                        sprite_img.save(tmp_path, 'PNG')
+                        result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+                        if asyncio.iscoroutine(result):
+                            self.run_async(result)
+                    else:
+                        text_color_hex = self.text_color.lstrip('#')
+                        bg_color_hex = self.bg_color.lstrip('#')
+                        inverted_speed = 101 - self.speed_var.get()
+                        result = self.client.send_text(
+                            value_text,
+                            char_height=16,
+                            color=text_color_hex,
+                            bg_color=bg_color_hex,
+                            animation=anim,
+                            speed=inverted_speed,
+                            rainbow_mode=self.rainbow_var.get()
+                        )
+                        if asyncio.iscoroutine(result):
+                            self.run_async(result)
+                except Exception as e:
+                    error_msg = str(e)
+                    self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to send text: {error_msg}"))
+                finally:
+                    self.root.after(0, lambda: self.send_text_btn.config(state=tk.NORMAL, text="Send Text"))
 
-                    # Invert speed: 1=slowest (100), 100=fastest (1)
-                    inverted_speed = 101 - self.speed_var.get()
+            threading.Thread(target=send_task, daemon=True).start()
 
-                    # Call send_text with animation, speed, and rainbow mode parameters
-                    result = self.client.send_text(
-                        text,
-                        char_height=self.font_size_var.get(),
-                        color=text_color_hex,
-                        bg_color=bg_color_hex,
-                        animation=self.animation_var.get(),
-                        speed=inverted_speed,
-                        rainbow_mode=self.rainbow_var.get()
-                    )
+        if self.animation_var.get() == 0:
+            parts = [p.strip() for p in text.replace('|', '\n').splitlines() if p.strip()]
 
-                    # If it's a coroutine, run it async; otherwise it already executed
-                    if asyncio.iscoroutine(result):
-                        self.run_async(result)
-            except Exception as e:
-                error_msg = str(e)
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to send text: {error_msg}"))
-            finally:
-                self.root.after(0, lambda: self.send_text_btn.config(state=tk.NORMAL, text="Send Text"))
-        
-        threading.Thread(target=send_task, daemon=True).start()
+            if self.text_use_sprite_var.get():
+                font = self._get_sprite_font_by_name(self.text_sprite_font_var.get().strip())
+                if not font:
+                    messagebox.showerror("Error", "Sprite font not found")
+                    return
+
+                try:
+                    sprite = Image.open(font.get('path', '')).convert("RGBA")
+                    cols = max(1, int(font.get('cols', 1)))
+                    tile_w = max(1, sprite.width // cols)
+                except Exception as e:
+                    messagebox.showerror("Error", f"Sprite load failed: {e}")
+                    return
+
+                max_chars = max(1, 64 // tile_w)
+                delay_ms = max(1, int(self.text_static_delay_var.get() or 2)) * 1000
+
+                pages = []
+                for segment in (parts if parts else [text]):
+                    words = segment.split()
+                    current = ""
+                    for word in words:
+                        if not word:
+                            continue
+                        if len(word) > max_chars:
+                            if current:
+                                pages.append({"text": current, "scroll": False})
+                                current = ""
+                            pages.append({"text": word, "scroll": True})
+                            continue
+
+                        candidate = word if not current else f"{current} {word}"
+                        if len(candidate) <= max_chars:
+                            current = candidate
+                        else:
+                            if current:
+                                pages.append({"text": current, "scroll": False})
+                            current = word
+
+                    if current:
+                        pages.append({"text": current, "scroll": False})
+
+                if not pages:
+                    return
+
+                state = {'idx': 0}
+
+                def show_page():
+                    page = pages[state['idx']]
+                    value_text = page['text']
+                    try:
+                        self._stop_sprite_scroll()
+                        if page['scroll']:
+                            line_img, sprite_err = self._build_sprite_text_line_image(
+                                value_text,
+                                font.get('path', ''),
+                                font.get('order', ''),
+                                font.get('cols', 1),
+                                self.bg_color
+                            )
+                            if line_img is None:
+                                raise Exception(sprite_err or "Sprite render failed")
+                            if line_img.width <= 64:
+                                send_text_value(value_text, anim_override=0)
+                                next_delay = delay_ms
+                            else:
+                                self._start_sprite_scroll(line_img, self.bg_color, self.speed_var.get(), direction="left")
+                                end_pad = 8
+                                scroll_width = line_img.width + end_pad
+                                max_offset = max(0, scroll_width - 64)
+                                interval = self._sprite_scroll_interval_ms(self.speed_var.get())
+                                scroll_duration = (max_offset + 1) * interval + 3000
+                                next_delay = scroll_duration + delay_ms
+                        else:
+                            send_text_value(value_text, anim_override=0)
+                            next_delay = delay_ms
+
+                        def advance():
+                            self._stop_sprite_scroll()
+                            state['idx'] = (state['idx'] + 1) % len(pages)
+                            show_page()
+
+                        self.text_static_timer = self.root.after(next_delay, advance)
+                    except Exception as e:
+                        error_msg = str(e)
+                        self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to send text: {error_msg}"))
+
+                show_page()
+                return
+
+            if len(parts) > 1:
+                delay_ms = max(1, int(self.text_static_delay_var.get() or 2)) * 1000
+                state = {'idx': 0}
+
+                def tick():
+                    send_text_value(parts[state['idx']], anim_override=0)
+                    state['idx'] = (state['idx'] + 1) % len(parts)
+                    self.text_static_timer = self.root.after(delay_ms, tick)
+
+                tick()
+                return
+
+        send_text_value(text)
     
     def load_image(self):
         """Load an image file"""
@@ -2896,6 +3213,11 @@ class iPixelController:
         if not self.image_path:
             messagebox.showwarning("No Image", "Please load an image first")
             return
+
+        image_path = self._resolve_asset_path(self.image_path)
+        if not os.path.exists(image_path):
+            messagebox.showwarning("Missing Image", f"Image not found: {image_path}")
+            return
         
         # Stop any running live clock
         if hasattr(self, 'clock_running') and self.clock_running:
@@ -2922,7 +3244,7 @@ class iPixelController:
                 
                 # Send image with save_slot=0 to display immediately
                 # Using 'crop' resize method to fill the entire display
-                result = self.client.send_image(self.image_path, resize_method='crop', save_slot=0)
+                result = self.client.send_image(image_path, resize_method='crop', save_slot=0)
                 if asyncio.iscoroutine(result):
                     self.run_async(result)
             except Exception as e:
@@ -2965,44 +3287,307 @@ class iPixelController:
             self.clock_bg_color = color[1]
             self.clock_bg_color_canvas.config(bg=self.clock_bg_color)
 
-    def browse_text_sprite_file(self):
-        """Select sprite sheet file for custom text font"""
+    def _get_sprite_fonts(self):
+        return self.settings.get('sprite_fonts', []) or []
+
+    def _get_sprite_font_names(self):
+        return [f.get('name', '') for f in self._get_sprite_fonts() if f.get('name')]
+
+    def _get_sprite_font_by_name(self, name):
+        for font in self._get_sprite_fonts():
+            if font.get('name') == name:
+                return font
+        return None
+
+    def _refresh_sprite_font_dropdowns(self):
+        names = self._get_sprite_font_names()
+        for combo_attr in [
+            'text_sprite_font_combo',
+            'clock_sprite_font_combo',
+            'countdown_sprite_font_combo',
+            'stock_sprite_font_combo',
+            'youtube_sprite_font_combo'
+        ]:
+            combo = getattr(self, combo_attr, None)
+            if combo:
+                combo['values'] = names
+
+    def _refresh_sprite_font_listbox(self):
+        if not hasattr(self, 'sprite_font_listbox'):
+            return
+        self.sprite_font_listbox.delete(0, tk.END)
+        for font in self._get_sprite_fonts():
+            self.sprite_font_listbox.insert(tk.END, font.get('name', ''))
+
+    def _on_sprite_font_select(self, event=None):
+        if not hasattr(self, 'sprite_font_listbox'):
+            return
+        selection = self.sprite_font_listbox.curselection()
+        if not selection:
+            return
+        name = self.sprite_font_listbox.get(selection[0])
+        font = self._get_sprite_font_by_name(name)
+        if not font:
+            return
+        self.sprite_font_name_var.set(font.get('name', ''))
+        self.sprite_font_path_var.set(font.get('path', ''))
+        self.sprite_font_order_var.set(font.get('order', ''))
+        self.sprite_font_cols_var.set(font.get('cols', 1))
+
+    def _browse_sprite_font_file(self):
         filepath = filedialog.askopenfilename(
-            title="Select text sprite sheet",
+            title="Select sprite sheet",
             filetypes=[("PNG files", "*.png"), ("All files", "*.*")]
         )
         if filepath:
-            self.text_sprite_path_var.set(filepath)
-            self.update_text_sprite_settings()
+            self.sprite_font_path_var.set(filepath)
+
+    def _add_sprite_font(self):
+        name = self.sprite_font_name_var.get().strip()
+        path = self.sprite_font_path_var.get().strip()
+        order = self.sprite_font_order_var.get().strip() or '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/ '
+        cols = int(self.sprite_font_cols_var.get() or 1)
+        if not name or not path:
+            messagebox.showwarning("Missing Data", "Please provide a name and sprite sheet path.")
+            return
+        if self._get_sprite_font_by_name(name):
+            messagebox.showwarning("Duplicate Name", "A sprite font with this name already exists.")
+            return
+        fonts = self._get_sprite_fonts()
+        fonts.append({'name': name, 'path': path, 'order': order, 'cols': cols})
+        self.settings['sprite_fonts'] = fonts
+        self.save_settings()
+        self._refresh_sprite_font_listbox()
+        self._refresh_sprite_font_dropdowns()
+
+    def _update_sprite_font(self):
+        name = self.sprite_font_name_var.get().strip()
+        path = self.sprite_font_path_var.get().strip()
+        order = self.sprite_font_order_var.get().strip() or '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/ '
+        cols = int(self.sprite_font_cols_var.get() or 1)
+        if not name or not path:
+            messagebox.showwarning("Missing Data", "Please provide a name and sprite sheet path.")
+            return
+        fonts = self._get_sprite_fonts()
+        updated = False
+        for font in fonts:
+            if font.get('name') == name:
+                font.update({'path': path, 'order': order, 'cols': cols})
+                updated = True
+                break
+        if not updated:
+            fonts.append({'name': name, 'path': path, 'order': order, 'cols': cols})
+        self.settings['sprite_fonts'] = fonts
+        self.save_settings()
+        self._refresh_sprite_font_listbox()
+        self._refresh_sprite_font_dropdowns()
+
+    def _delete_sprite_font(self):
+        name = self.sprite_font_name_var.get().strip()
+        if not name:
+            return
+        fonts = [f for f in self._get_sprite_fonts() if f.get('name') != name]
+        self.settings['sprite_fonts'] = fonts
+        self.save_settings()
+        self._refresh_sprite_font_listbox()
+        self._refresh_sprite_font_dropdowns()
 
     def update_text_sprite_settings(self):
         """Persist sprite font settings for text"""
         self.settings['text_use_sprite_font'] = self.text_use_sprite_var.get()
-        self.settings['text_sprite_path'] = self.text_sprite_path_var.get().strip()
-        self.settings['text_sprite_order'] = self.text_sprite_order_var.get().strip() or '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/ '
-        self.settings['text_sprite_cols'] = int(self.text_sprite_cols_var.get() or 1)
+        self.settings['text_sprite_font_name'] = self.text_sprite_font_var.get().strip()
+        self.settings['text_static_delay_seconds'] = int(self.text_static_delay_var.get() or 2)
         self.save_settings()
 
-    def browse_clock_time_sprite_file(self):
-        """Select sprite sheet file for clock glyphs"""
+    def update_clock_sprite_settings(self):
+        """Persist sprite font settings for clock"""
+        self.settings['clock_use_time_sprite'] = self.clock_use_time_sprite_var.get()
+        self.settings['clock_time_sprite_font_name'] = self.clock_sprite_font_var.get().strip()
+        self.save_settings()
+
+    def update_countdown_sprite_settings(self):
+        """Persist sprite font settings for countdown"""
+        self.settings['countdown_use_sprite_font'] = self.countdown_use_sprite_var.get()
+        self.settings['countdown_sprite_font_name'] = self.countdown_sprite_font_var.get().strip()
+        self.settings['countdown_static_delay_seconds'] = int(self.countdown_static_delay_var.get() or 2)
+        self.save_settings()
+
+    def update_stock_sprite_settings(self):
+        """Persist sprite font settings for stocks"""
+        self.settings['stock_use_sprite_font'] = True
+        self.settings['stock_sprite_font_name'] = self.stock_sprite_font_var.get().strip()
+        self.settings['stock_static_delay_seconds'] = int(self.stock_static_delay_var.get() or 2)
+        self.save_settings()
+
+    def update_youtube_sprite_settings(self):
+        """Persist sprite font settings for YouTube"""
+        self.settings['youtube_use_sprite_font'] = self.youtube_use_sprite_var.get()
+        self.settings['youtube_sprite_font_name'] = self.youtube_sprite_font_var.get().strip()
+        self.save_settings()
+
+    def browse_youtube_logo(self):
         filepath = filedialog.askopenfilename(
-            title="Select clock sprite sheet",
+            title="Select YouTube logo (PNG)",
             filetypes=[("PNG files", "*.png"), ("All files", "*.*")]
         )
         if filepath:
-            self.clock_time_sprite_path_var.set(filepath)
-            self.update_clock_time_sprite_settings()
+            self.youtube_logo_path_var.set(filepath)
+            self.update_youtube_logo_settings()
 
-    def update_clock_time_sprite_settings(self):
-        """Persist sprite sheet settings"""
-        self.settings['clock_use_time_sprite'] = self.clock_use_time_sprite_var.get()
-        self.settings['clock_time_sprite_path'] = self.clock_time_sprite_path_var.get().strip()
-        self.settings['clock_time_sprite_order'] = self.clock_time_sprite_order_var.get().strip() or '0123456789:'
-        self.settings['clock_time_sprite_cols'] = int(self.clock_time_sprite_cols_var.get() or 1)
+    def update_youtube_logo_settings(self):
+        """Persist YouTube logo settings"""
+        self.settings['youtube_show_logo'] = self.youtube_show_logo_var.get()
+        self.settings['youtube_logo_path'] = self.youtube_logo_path_var.get().strip()
         self.save_settings()
+
+    def _sprite_scroll_interval_ms(self, speed_value):
+        try:
+            speed = int(speed_value)
+        except Exception:
+            speed = 50
+        return max(20, 220 - speed * 2)
+
+    def _resolve_asset_path(self, path_value):
+        if not path_value:
+            return ""
+        path_value = os.path.expanduser(path_value)
+        if os.path.isabs(path_value):
+            return path_value
+        return os.path.normpath(os.path.join(os.path.dirname(__file__), path_value))
+
+    def _build_sprite_text_line_image(self, text, sprite_path, order, cols, bg_color):
+        """Build a single-line image from a sprite sheet without scaling to 64x16."""
+        sprite_path = self._resolve_asset_path(sprite_path)
+        if not sprite_path or not os.path.isfile(sprite_path):
+            return None, "Sprite sheet not found"
+
+        order = (order or "").strip()
+        if not order:
+            return None, "Glyph order is empty"
+
+        try:
+            cols = int(cols)
+        except Exception:
+            cols = 1
+        cols = max(1, cols)
+
+        try:
+            sprite = Image.open(sprite_path).convert("RGBA")
+        except Exception as e:
+            return None, f"Sprite load failed: {e}"
+
+        rows = max(1, math.ceil(len(order) / cols))
+        tile_w = max(1, sprite.width // cols)
+        tile_h = max(1, sprite.height // rows)
+
+        glyphs = {}
+        for idx, ch in enumerate(order):
+            row = idx // cols
+            col = idx % cols
+            left = col * tile_w
+            upper = row * tile_h
+            right = left + tile_w
+            lower = upper + tile_h
+            if right <= sprite.width and lower <= sprite.height:
+                glyphs[ch] = sprite.crop((left, upper, right, lower))
+
+        if not glyphs:
+            return None, "No glyphs found in sprite sheet"
+
+        chars = list(text)
+        total_w = tile_w * len(chars)
+        base = Image.new("RGBA", (max(1, total_w), tile_h), bg_color)
+
+        x = 0
+        for ch in chars:
+            glyph = glyphs.get(ch)
+            if glyph is None:
+                glyph = glyphs.get(ch.upper())
+            if glyph is None and ch == " ":
+                x += tile_w
+                continue
+            if glyph is None:
+                x += tile_w
+                continue
+            base.paste(glyph, (x, 0), glyph)
+            x += tile_w
+
+        return base.convert("RGB"), None
+
+    def _stop_sprite_scroll(self):
+        self.sprite_scroll_running = False
+        if self.sprite_scroll_timer:
+            self.root.after_cancel(self.sprite_scroll_timer)
+            self.sprite_scroll_timer = None
+
+    def _start_sprite_scroll(self, line_img, bg_color, speed, direction="left"):
+        self._stop_sprite_scroll()
+        self.sprite_scroll_running = True
+
+        end_pad = 8
+        if end_pad > 0 and line_img.width > 0:
+            if direction == "left":
+                padded = Image.new(line_img.mode, (line_img.width + end_pad, line_img.height), bg_color)
+                padded.paste(line_img, (0, 0))
+                line_img = padded
+            elif direction == "right":
+                padded = Image.new(line_img.mode, (line_img.width + end_pad, line_img.height), bg_color)
+                padded.paste(line_img, (end_pad, 0))
+                line_img = padded
+
+        if line_img.width <= 64:
+            frame = line_img
+            if line_img.height != 16:
+                frame = line_img.resize((64, 16), Image.NEAREST)
+            tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_sprite_scroll.png')
+            frame.save(tmp_path, 'PNG')
+            result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+            if asyncio.iscoroutine(result):
+                self.run_async(result)
+            self._stop_sprite_scroll()
+            return
+
+        max_offset = line_img.width - 64
+        offset = [max_offset if direction == "right" else 0]
+        step = -1 if direction == "right" else 1
+        interval = self._sprite_scroll_interval_ms(speed)
+        pause_ms = 3000
+
+        def tick():
+            if not self.sprite_scroll_running:
+                return
+
+            try:
+                crop = line_img.crop((offset[0], 0, offset[0] + 64, line_img.height))
+                if line_img.height != 16:
+                    crop = crop.resize((64, 16), Image.NEAREST)
+                tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_sprite_scroll.png')
+                crop.save(tmp_path, 'PNG')
+                result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+                if asyncio.iscoroutine(result):
+                    self.run_async(result)
+            except Exception:
+                pass
+
+            next_offset = offset[0] + step
+            wrapped = False
+            if next_offset > max_offset:
+                next_offset = 0
+                wrapped = True
+            elif next_offset < 0:
+                next_offset = max_offset
+                wrapped = True
+
+            offset[0] = next_offset
+            if self.sprite_scroll_running:
+                delay = pause_ms if wrapped else interval
+                self.sprite_scroll_timer = self.root.after(delay, tick)
+
+        self.sprite_scroll_timer = self.root.after(interval, tick)
 
     def _build_sprite_text_image(self, text, sprite_path, order, cols, bg_color):
         """Build a 64x16 image from a sprite sheet and text."""
+        sprite_path = self._resolve_asset_path(sprite_path)
         if not sprite_path or not os.path.isfile(sprite_path):
             return None, "Sprite sheet not found"
 
@@ -3073,11 +3658,15 @@ class iPixelController:
 
     def _build_time_sprite_image(self, time_text):
         """Build a 64x16 clock image from a sprite sheet."""
+        font_name = self.clock_sprite_font_var.get().strip()
+        font = self._get_sprite_font_by_name(font_name)
+        if not font:
+            return None, "Sprite font not found"
         return self._build_sprite_text_image(
             time_text,
-            self.clock_time_sprite_path_var.get().strip(),
-            self.clock_time_sprite_order_var.get() or "0123456789:",
-            self.clock_time_sprite_cols_var.get() or 1,
+            font.get('path', ''),
+            font.get('order', '0123456789:'),
+            font.get('cols', 1),
             self.clock_bg_color
         )
 
@@ -3139,6 +3728,11 @@ class iPixelController:
         
         # Stop any existing clock
         self.stop_live_clock()
+        self._stop_sprite_scroll()
+        if self.countdown_static_timer:
+            self.root.after_cancel(self.countdown_static_timer)
+            self.countdown_static_timer = None
+        self._stop_sprite_scroll()
         
         # Stop any running stock auto-refresh
         self.stop_stock_refresh()
@@ -3230,6 +3824,12 @@ class iPixelController:
         if self.clock_timer:
             self.root.after_cancel(self.clock_timer)
             self.clock_timer = None
+
+        if self.countdown_static_timer:
+            self.root.after_cancel(self.countdown_static_timer)
+            self.countdown_static_timer = None
+
+        self._stop_sprite_scroll()
         
         self.send_clock_btn.config(state=tk.NORMAL)
         self.stop_clock_btn.config(state=tk.DISABLED)
@@ -3239,6 +3839,9 @@ class iPixelController:
         if self.stock_refresh_timer:
             self.root.after_cancel(self.stock_refresh_timer)
             self.stock_refresh_timer = None
+        if self.stock_static_timer:
+            self.root.after_cancel(self.stock_static_timer)
+            self.stock_static_timer = None
     
     def start_countdown(self):
         """Start a countdown timer"""
@@ -3246,6 +3849,10 @@ class iPixelController:
         
         # Stop any existing clock
         self.stop_live_clock()
+        self._stop_sprite_scroll()
+        if self.countdown_static_timer:
+            self.root.after_cancel(self.countdown_static_timer)
+            self.countdown_static_timer = None
         
         self.send_clock_btn.config(state=tk.DISABLED)
         self.stop_clock_btn.config(state=tk.NORMAL)
@@ -3274,9 +3881,17 @@ class iPixelController:
             try:
                 now = datetime.now()
                 
+                # Format based on selection
+                format_choice = self.countdown_format_var.get()
+
+                event_name = self.countdown_event_var.get()
+
                 # Check if event has passed
                 if now >= target_datetime:
-                    countdown_text = f"{self.countdown_event_var.get()}: NOW!"
+                    if format_choice == "with_name":
+                        countdown_text = f"{event_name}: NOW!"
+                    else:
+                        countdown_text = "NOW!"
                 else:
                     # Calculate time difference
                     delta = target_datetime - now
@@ -3284,9 +3899,6 @@ class iPixelController:
                     days = delta.days
                     hours, remainder = divmod(delta.seconds, 3600)
                     minutes, seconds = divmod(remainder, 60)
-                    
-                    # Format based on selection
-                    format_choice = self.countdown_format_var.get()
                     
                     if format_choice == "days_hours_mins":
                         countdown_text = f"{days}d {hours}h {minutes}m"
@@ -3298,10 +3910,32 @@ class iPixelController:
                     elif format_choice == "days_only":
                         countdown_text = f"{days} days"
                     elif format_choice == "with_name":
-                        event_name = self.countdown_event_var.get()
                         countdown_text = f"{event_name}: {days}d {hours}h {minutes}m"
                     else:
                         countdown_text = f"{days}d {hours}h {minutes}m"
+
+                def _build_countdown_frames():
+                    if now >= target_datetime:
+                        if format_choice == "with_name":
+                            return [event_name.strip() or "Event", "NOW!"]
+                        return ["NOW!"]
+
+                    if format_choice == "with_name":
+                        return [
+                            event_name.strip() or "Event",
+                            f"{days}d",
+                            f"{hours}h {minutes}m"
+                        ]
+                    if format_choice == "days_hours_mins":
+                        return [f"{days}d", f"{hours}h {minutes}m"]
+                    if format_choice == "days_hours":
+                        return [f"{days}d", f"{hours}h"]
+                    if format_choice == "hours_mins":
+                        total_hours = days * 24 + hours
+                        return [f"{total_hours}h", f"{minutes}m"]
+                    if format_choice == "days_only":
+                        return [f"{days} days"]
+                    return [f"{days}d", f"{hours}h {minutes}m"]
                 
                 # Determine animation
                 animation = self.countdown_animation_var.get()
@@ -3310,27 +3944,122 @@ class iPixelController:
                     "scroll_left": 1,
                     "flash": 4
                 }
+                if animation != "static" and self.countdown_static_timer:
+                    self.root.after_cancel(self.countdown_static_timer)
+                    self.countdown_static_timer = None
+                if animation != "scroll_left":
+                    self._stop_sprite_scroll()
                 
                 # Send text with countdown
                 def send_task():
                     try:
-                        color_hex = self.countdown_color.lstrip('#')
-                        bg_color_hex = self.countdown_bg_color.lstrip('#')
+                        if self.countdown_use_sprite_var.get():
+                            font = self._get_sprite_font_by_name(self.countdown_sprite_font_var.get().strip())
+                            if not font:
+                                raise Exception("Sprite font not found")
+                            if animation == "scroll_left":
+                                line_img, sprite_err = self._build_sprite_text_line_image(
+                                    countdown_text,
+                                    font.get('path', ''),
+                                    font.get('order', ''),
+                                    font.get('cols', 1),
+                                    self.countdown_bg_color
+                                )
+                                if line_img is None:
+                                    raise Exception(sprite_err or "Sprite render failed")
+                                self._start_sprite_scroll(line_img, self.countdown_bg_color, self.countdown_speed_var.get(), direction="left")
+                                return
+                            else:
+                                def send_value(value_text):
+                                    sprite_img, sprite_err = self._build_sprite_text_image(
+                                        value_text,
+                                        font.get('path', ''),
+                                        font.get('order', ''),
+                                        font.get('cols', 1),
+                                        self.countdown_bg_color
+                                    )
+                                    if sprite_img is None:
+                                        raise Exception(sprite_err or "Sprite render failed")
+                                    tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_countdown_sprite.png')
+                                    sprite_img.save(tmp_path, 'PNG')
+                                    result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+                                    if asyncio.iscoroutine(result):
+                                        self.run_async(result)
 
-                        # Invert speed: 1=slowest (100), 100=fastest (1)
-                        inverted_speed = 101 - self.countdown_speed_var.get()
+                                if animation == "static":
+                                    delay_ms = max(1, int(self.countdown_static_delay_var.get() or 2)) * 1000
+                                    frames = _build_countdown_frames()
+                                    if len(frames) > 1:
+                                        state = {'index': 0}
 
-                        result = self.client.send_text(
-                            text=countdown_text,
-                            char_height=16,
-                            color=color_hex,
-                            bg_color=bg_color_hex,
-                            animation=anim_map.get(animation, 0),
-                            speed=inverted_speed
-                        )
+                                        def tick():
+                                            send_value(frames[state['index']])
+                                            state['index'] = (state['index'] + 1) % len(frames)
+                                            self.countdown_static_timer = self.root.after(delay_ms, tick)
 
-                        if asyncio.iscoroutine(result):
-                            self.run_async(result)
+                                        tick()
+                                    else:
+                                        send_value(frames[0])
+                                    return
+                                send_value(countdown_text)
+                        else:
+                            if animation == "static":
+                                delay_ms = max(1, int(self.countdown_static_delay_var.get() or 2)) * 1000
+                                frames = _build_countdown_frames()
+                                if len(frames) > 1:
+                                    state = {'index': 0}
+
+                                    def tick():
+                                        color_hex = self.countdown_color.lstrip('#')
+                                        bg_color_hex = self.countdown_bg_color.lstrip('#')
+                                        inverted_speed = 101 - self.countdown_speed_var.get()
+                                        result = self.client.send_text(
+                                            text=frames[state['index']],
+                                            char_height=16,
+                                            color=color_hex,
+                                            bg_color=bg_color_hex,
+                                            animation=0,
+                                            speed=inverted_speed
+                                        )
+                                        if asyncio.iscoroutine(result):
+                                            self.run_async(result)
+                                        state['index'] = (state['index'] + 1) % len(frames)
+                                        self.countdown_static_timer = self.root.after(delay_ms, tick)
+
+                                    tick()
+                                else:
+                                    color_hex = self.countdown_color.lstrip('#')
+                                    bg_color_hex = self.countdown_bg_color.lstrip('#')
+                                    inverted_speed = 101 - self.countdown_speed_var.get()
+                                    result = self.client.send_text(
+                                        text=frames[0],
+                                        char_height=16,
+                                        color=color_hex,
+                                        bg_color=bg_color_hex,
+                                        animation=0,
+                                        speed=inverted_speed
+                                    )
+                                    if asyncio.iscoroutine(result):
+                                        self.run_async(result)
+                                return
+
+                            color_hex = self.countdown_color.lstrip('#')
+                            bg_color_hex = self.countdown_bg_color.lstrip('#')
+
+                            # Invert speed: 1=slowest (100), 100=fastest (1)
+                            inverted_speed = 101 - self.countdown_speed_var.get()
+
+                            result = self.client.send_text(
+                                text=countdown_text,
+                                char_height=16,
+                                color=color_hex,
+                                bg_color=bg_color_hex,
+                                animation=anim_map.get(animation, 0),
+                                speed=inverted_speed
+                            )
+
+                            if asyncio.iscoroutine(result):
+                                self.run_async(result)
                     except Exception as e:
                         error_msg = str(e)
                         self.root.after(0, lambda: messagebox.showerror("Error", f"Countdown update failed: {error_msg}"))
@@ -3504,6 +4233,7 @@ class iPixelController:
     def generate_thumbnail(self, image_path, max_size=(64, 16)):
         """Generate a thumbnail from an image file and return as base64 string"""
         try:
+            image_path = self._resolve_asset_path(image_path)
             if not os.path.exists(image_path):
                 return None
             
@@ -3622,15 +4352,8 @@ class iPixelController:
             return f"{ticker} - {format_names.get(format_type, format_type)}{auto_refresh}"
         elif preset_type == "youtube":
             channel = preset.get('channel', 'Unknown')
-            format_type = preset.get('format', 'subs_views')
-            format_names = {
-                'subs_views': 'Subs + Views',
-                'subs_only': 'Subscribers',
-                'channel_subs': 'Channel + Subs',
-                'latest_views': 'Latest Video'
-            }
             auto_refresh = " (Auto)" if preset.get('auto_refresh', False) else ""
-            return f"{format_names.get(format_type, format_type)}{auto_refresh}"
+            return f"Logo + Subscribers{auto_refresh}"
         elif preset_type == "weather":
             location = preset.get('location', 'Unknown')
             unit = preset.get('unit', 'metric')
@@ -3880,14 +4603,13 @@ class iPixelController:
                 preset["text"] = self.text_input.get("1.0", tk.END).strip()
                 preset["text_color"] = self.text_color
                 preset["bg_color"] = self.bg_color
-                preset["char_height"] = self.font_size_var.get()
+                preset["char_height"] = 16
                 preset["animation"] = self.animation_var.get()
                 preset["speed"] = self.speed_var.get()
                 preset["rainbow"] = self.rainbow_var.get()
                 preset["text_use_sprite_font"] = self.text_use_sprite_var.get()
-                preset["text_sprite_path"] = self.text_sprite_path_var.get().strip()
-                preset["text_sprite_order"] = self.text_sprite_order_var.get().strip() or '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/ '
-                preset["text_sprite_cols"] = int(self.text_sprite_cols_var.get() or 1)
+                preset["text_sprite_font_name"] = self.text_sprite_font_var.get().strip()
+                preset["text_static_delay_seconds"] = int(self.text_static_delay_var.get() or 2)
             elif preset_type == "image":
                 preset["image_path"] = self.image_path if hasattr(self, 'image_path') and self.image_path else ""
                 # Generate thumbnail for image/gif
@@ -3908,9 +4630,7 @@ class iPixelController:
                     preset["clock_animation"] = self.clock_animation_var.get()
                     preset["clock_update_interval"] = self.clock_update_interval_var.get()
                     preset["clock_use_time_sprite"] = self.clock_use_time_sprite_var.get()
-                    preset["clock_time_sprite_path"] = self.clock_time_sprite_path_var.get().strip()
-                    preset["clock_time_sprite_order"] = self.clock_time_sprite_order_var.get().strip() or '0123456789:'
-                    preset["clock_time_sprite_cols"] = int(self.clock_time_sprite_cols_var.get() or 1)
+                    preset["clock_time_sprite_font_name"] = self.clock_sprite_font_var.get().strip()
                 else:  # countdown
                     preset["countdown_event"] = self.countdown_event_var.get()
                     preset["countdown_year"] = self.countdown_year_var.get()
@@ -3924,6 +4644,9 @@ class iPixelController:
                     preset["countdown_animation"] = self.countdown_animation_var.get()
                     preset["countdown_speed"] = self.countdown_speed_var.get()
                     preset["countdown_update_interval"] = self.countdown_update_interval_var.get()
+                    preset["countdown_use_sprite_font"] = self.countdown_use_sprite_var.get()
+                    preset["countdown_sprite_font_name"] = self.countdown_sprite_font_var.get().strip()
+                    preset["countdown_static_delay_seconds"] = int(self.countdown_static_delay_var.get() or 2)
             
             self.presets.append(preset)
             self.save_presets()
@@ -3941,6 +4664,13 @@ class iPixelController:
         # Stop any running live clock first
         if hasattr(self, 'clock_running') and self.clock_running:
             self.stop_live_clock()
+        self._stop_sprite_scroll()
+        if self.text_static_timer:
+            self.root.after_cancel(self.text_static_timer)
+            self.text_static_timer = None
+        if self.countdown_static_timer:
+            self.root.after_cancel(self.countdown_static_timer)
+            self.countdown_static_timer = None
         
         # Stop any running stock auto-refresh
         self.stop_stock_refresh()
@@ -3961,15 +4691,87 @@ class iPixelController:
                         bg_color_raw = preset.get('bg_color', '#000000')
 
                         if preset.get('text_use_sprite_font', False):
-                            sprite_img, sprite_err = self._build_sprite_text_image(
-                                text,
-                                preset.get('text_sprite_path', '').strip(),
-                                preset.get('text_sprite_order', ''),
-                                preset.get('text_sprite_cols', 1),
-                                bg_color_raw
-                            )
+                            font_name = preset.get('text_sprite_font_name', '').strip()
+                            font = self._get_sprite_font_by_name(font_name)
+                            if font:
+                                anim = preset.get('animation', 0)
+                                if anim in (1, 2):
+                                    line_img, sprite_err = self._build_sprite_text_line_image(
+                                        text,
+                                        font.get('path', ''),
+                                        font.get('order', ''),
+                                        font.get('cols', 1),
+                                        bg_color_raw
+                                    )
+                                    if line_img is None:
+                                        raise Exception(sprite_err or "Sprite render failed")
+                                    direction = "right" if anim == 2 else "left"
+                                    self._start_sprite_scroll(line_img, bg_color_raw, preset.get('speed', 50), direction=direction)
+                                    return
+                                sprite_img, sprite_err = self._build_sprite_text_image(
+                                    text,
+                                    font.get('path', ''),
+                                    font.get('order', ''),
+                                    font.get('cols', 1),
+                                    bg_color_raw
+                                )
+                            else:
+                                legacy_path = preset.get('text_sprite_path', '').strip()
+                                legacy_order = preset.get('text_sprite_order', '')
+                                legacy_cols = preset.get('text_sprite_cols', 1)
+                                if not legacy_path:
+                                    raise Exception("Sprite font not found")
+                                anim = preset.get('animation', 0)
+                                if anim in (1, 2):
+                                    line_img, sprite_err = self._build_sprite_text_line_image(
+                                        text,
+                                        legacy_path,
+                                        legacy_order,
+                                        legacy_cols,
+                                        bg_color_raw
+                                    )
+                                    if line_img is None:
+                                        raise Exception(sprite_err or "Sprite render failed")
+                                    direction = "right" if anim == 2 else "left"
+                                    self._start_sprite_scroll(line_img, bg_color_raw, preset.get('speed', 50), direction=direction)
+                                    return
+                                sprite_img, sprite_err = self._build_sprite_text_image(
+                                    text,
+                                    legacy_path,
+                                    legacy_order,
+                                    legacy_cols,
+                                    bg_color_raw
+                                )
                             if sprite_img is None:
                                 raise Exception(sprite_err or "Sprite render failed")
+
+                            if preset.get('animation', 0) == 0:
+                                parts = [p.strip() for p in text.replace('|', '\n').splitlines() if p.strip()]
+                                if len(parts) > 1:
+                                    delay_ms = max(1, int(preset.get('text_static_delay_seconds', 2) or 2)) * 1000
+                                    state = {'idx': 0}
+
+                                    def tick():
+                                        send_value = parts[state['idx']]
+                                        sprite_img2, sprite_err2 = self._build_sprite_text_image(
+                                            send_value,
+                                            (font.get('path', '') if font else legacy_path),
+                                            (font.get('order', '') if font else legacy_order),
+                                            (font.get('cols', 1) if font else legacy_cols),
+                                            bg_color_raw
+                                        )
+                                        if sprite_img2 is None:
+                                            raise Exception(sprite_err2 or "Sprite render failed")
+                                        tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_text_sprite.png')
+                                        sprite_img2.save(tmp_path, 'PNG')
+                                        result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+                                        if asyncio.iscoroutine(result):
+                                            self.run_async(result)
+                                        state['idx'] = (state['idx'] + 1) % len(parts)
+                                        self.text_static_timer = self.root.after(delay_ms, tick)
+
+                                    tick()
+                                    return
 
                             tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_text_sprite.png')
                             sprite_img.save(tmp_path, 'PNG')
@@ -3980,6 +4782,31 @@ class iPixelController:
 
                         text_color = text_color_raw.lstrip('#')
                         bg_color = bg_color_raw.lstrip('#')
+
+                        if preset.get('animation', 0) == 0:
+                            parts = [p.strip() for p in text.replace('|', '\n').splitlines() if p.strip()]
+                            if len(parts) > 1:
+                                delay_ms = max(1, int(preset.get('text_static_delay_seconds', 2) or 2)) * 1000
+                                state = {'idx': 0}
+
+                                def tick():
+                                    value_text = parts[state['idx']]
+                                    result = self.client.send_text(
+                                        value_text,
+                                        char_height=preset.get('char_height', 16),
+                                        color=text_color,
+                                        bg_color=bg_color,
+                                        animation=0,
+                                        speed=101 - preset.get('speed', 50),
+                                        rainbow_mode=preset.get('rainbow', 0)
+                                    )
+                                    if asyncio.iscoroutine(result):
+                                        self.run_async(result)
+                                    state['idx'] = (state['idx'] + 1) % len(parts)
+                                    self.text_static_timer = self.root.after(delay_ms, tick)
+
+                                tick()
+                                return
 
                         # Invert speed: 1=slowest (100), 100=fastest (1)
                         saved_speed = preset.get('speed', 50)
@@ -4004,7 +4831,7 @@ class iPixelController:
                 threading.Thread(target=send_task, daemon=True).start()
                 
             elif preset_type == "image":
-                image_path = preset.get('image_path')
+                image_path = self._resolve_asset_path(preset.get('image_path'))
                 if image_path and os.path.exists(image_path):
                     def send_task():
                         try:
@@ -4045,9 +4872,7 @@ class iPixelController:
                     clock_animation = preset.get('clock_animation', 'static')
                     update_interval = preset.get('clock_update_interval', 1)
                     clock_use_time_sprite = preset.get('clock_use_time_sprite', False)
-                    clock_time_sprite_path = preset.get('clock_time_sprite_path', '').strip()
-                    clock_time_sprite_order = preset.get('clock_time_sprite_order', '0123456789:')
-                    clock_time_sprite_cols = preset.get('clock_time_sprite_cols', 11)
+                    clock_time_sprite_font_name = preset.get('clock_time_sprite_font_name', '').strip()
 
                     # Sync UI/state for sprite rendering colors
                     self.clock_color = clock_color
@@ -4079,9 +4904,7 @@ class iPixelController:
                                     self.root.after(0, lambda t=current_time: self.clock_image_status_var.set(f"Clock tick: {t}"))
 
                                     if clock_use_time_sprite:
-                                        self.clock_time_sprite_path_var.set(clock_time_sprite_path)
-                                        self.clock_time_sprite_order_var.set(clock_time_sprite_order)
-                                        self.clock_time_sprite_cols_var.set(clock_time_sprite_cols)
+                                        self.clock_sprite_font_var.set(clock_time_sprite_font_name)
                                         sprite_img, sprite_err = self._build_time_sprite_image(current_time)
                                         if sprite_img is not None:
                                             tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_clock_sprite.png')
@@ -4095,6 +4918,29 @@ class iPixelController:
                                             except Exception as e:
                                                 self.root.after(0, lambda: self.clock_image_status_var.set(f"Sprite send failed: {e}"))
                                         else:
+                                            # Legacy fallback
+                                            legacy_path = preset.get('clock_time_sprite_path', '').strip()
+                                            legacy_order = preset.get('clock_time_sprite_order', '0123456789:')
+                                            legacy_cols = preset.get('clock_time_sprite_cols', 11)
+                                            if legacy_path:
+                                                sprite_img, sprite_err = self._build_sprite_text_image(
+                                                    current_time,
+                                                    legacy_path,
+                                                    legacy_order,
+                                                    legacy_cols,
+                                                    clock_bg_color
+                                                )
+                                                if sprite_img is not None:
+                                                    tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_clock_sprite.png')
+                                                    sprite_img.save(tmp_path, 'PNG')
+                                                    self.root.after(0, lambda p=tmp_path: self.clock_image_status_var.set(f"Sprite image: {os.path.basename(p)}"))
+                                                    try:
+                                                        result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+                                                        if asyncio.iscoroutine(result):
+                                                            self.run_async(result)
+                                                        return
+                                                    except Exception as e:
+                                                        self.root.after(0, lambda: self.clock_image_status_var.set(f"Sprite send failed: {e}"))
                                             self.root.after(0, lambda: self.clock_image_status_var.set(f"Sprite error: {sprite_err} (fallback to text)"))
                                     else:
                                         self.root.after(0, lambda: self.clock_image_status_var.set("Sprite sheet disabled"))
@@ -4146,6 +4992,9 @@ class iPixelController:
                     countdown_animation = preset.get('countdown_animation', 'static')
                     countdown_speed = preset.get('countdown_speed', 50)
                     update_interval = preset.get('countdown_update_interval', 60)
+                    countdown_use_sprite_font = preset.get('countdown_use_sprite_font', False)
+                    countdown_sprite_font_name = preset.get('countdown_sprite_font_name', '').strip()
+                    countdown_static_delay_seconds = preset.get('countdown_static_delay_seconds', 2)
                     
                     # Stop any existing clock
                     if hasattr(self, 'clock_running') and self.clock_running:
@@ -4165,28 +5014,55 @@ class iPixelController:
                         
                         try:
                             now = datetime.now()
+                            format_choice = countdown_format
                             
                             if now >= target_datetime:
-                                countdown_text = f"{event_name}: NOW!"
+                                if format_choice == "with_name":
+                                    countdown_text = f"{event_name}: NOW!"
+                                else:
+                                    countdown_text = "NOW!"
                             else:
                                 delta = target_datetime - now
                                 days = delta.days
                                 hours, remainder = divmod(delta.seconds, 3600)
                                 minutes, seconds = divmod(remainder, 60)
                                 
-                                if countdown_format == "days_hours_mins":
+                                if format_choice == "days_hours_mins":
                                     countdown_text = f"{days}d {hours}h {minutes}m"
-                                elif countdown_format == "days_hours":
+                                elif format_choice == "days_hours":
                                     countdown_text = f"{days}d {hours}h"
-                                elif countdown_format == "hours_mins":
+                                elif format_choice == "hours_mins":
                                     total_hours = days * 24 + hours
                                     countdown_text = f"{total_hours}h {minutes}m"
-                                elif countdown_format == "days_only":
+                                elif format_choice == "days_only":
                                     countdown_text = f"{days} days"
-                                elif countdown_format == "with_name":
+                                elif format_choice == "with_name":
                                     countdown_text = f"{event_name}: {days}d {hours}h {minutes}m"
                                 else:
                                     countdown_text = f"{days}d {hours}h {minutes}m"
+
+                            def _build_countdown_frames():
+                                if now >= target_datetime:
+                                    if format_choice == "with_name":
+                                        return [event_name.strip() or "Event", "NOW!"]
+                                    return ["NOW!"]
+
+                                if format_choice == "with_name":
+                                    return [
+                                        event_name.strip() or "Event",
+                                        f"{days}d",
+                                        f"{hours}h {minutes}m"
+                                    ]
+                                if format_choice == "days_hours_mins":
+                                    return [f"{days}d", f"{hours}h {minutes}m"]
+                                if format_choice == "days_hours":
+                                    return [f"{days}d", f"{hours}h"]
+                                if format_choice == "hours_mins":
+                                    total_hours = days * 24 + hours
+                                    return [f"{total_hours}h", f"{minutes}m"]
+                                if format_choice == "days_only":
+                                    return [f"{days} days"]
+                                return [f"{days}d", f"{hours}h {minutes}m"]
                             
                             anim_map = {
                                 "static": 0,
@@ -4196,23 +5072,205 @@ class iPixelController:
                             
                             def send_task():
                                 try:
-                                    color_hex = countdown_color.lstrip('#')
-                                    bg_color_hex = countdown_bg_color.lstrip('#')
+                                    if countdown_use_sprite_font:
+                                        font = self._get_sprite_font_by_name(countdown_sprite_font_name)
+                                        if font:
+                                            if countdown_animation == "scroll_left":
+                                                line_img, sprite_err = self._build_sprite_text_line_image(
+                                                    countdown_text,
+                                                    font.get('path', ''),
+                                                    font.get('order', ''),
+                                                    font.get('cols', 1),
+                                                    countdown_bg_color
+                                                )
+                                                if line_img is None:
+                                                    raise Exception(sprite_err or "Sprite render failed")
+                                                self._start_sprite_scroll(line_img, countdown_bg_color, countdown_speed, direction="left")
+                                                return
+                                            if countdown_animation == "static":
+                                                delay_ms = max(1, int(countdown_static_delay_seconds or 2)) * 1000
+                                                frames = _build_countdown_frames()
+                                                if len(frames) > 1:
+                                                    state = {'index': 0}
 
-                                    # Invert speed: 1=slowest (100), 100=fastest (1)
-                                    inverted_speed = 101 - countdown_speed
+                                                    def tick():
+                                                        value_text = frames[state['index']]
+                                                        sprite_img2, sprite_err2 = self._build_sprite_text_image(
+                                                            value_text,
+                                                            font.get('path', ''),
+                                                            font.get('order', ''),
+                                                            font.get('cols', 1),
+                                                            countdown_bg_color
+                                                        )
+                                                        if sprite_img2 is None:
+                                                            raise Exception(sprite_err2 or "Sprite render failed")
+                                                        tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_countdown_sprite.png')
+                                                        sprite_img2.save(tmp_path, 'PNG')
+                                                        result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+                                                        if asyncio.iscoroutine(result):
+                                                            self.run_async(result)
+                                                        state['index'] = (state['index'] + 1) % len(frames)
+                                                        self.countdown_static_timer = self.root.after(delay_ms, tick)
 
-                                    result = self.client.send_text(
-                                        text=countdown_text,
-                                        char_height=16,
-                                        color=color_hex,
-                                        bg_color=bg_color_hex,
-                                        animation=anim_map.get(countdown_animation, 0),
-                                        speed=inverted_speed
-                                    )
+                                                    tick()
+                                                else:
+                                                    value_text = frames[0]
+                                                    sprite_img2, sprite_err2 = self._build_sprite_text_image(
+                                                        value_text,
+                                                        font.get('path', ''),
+                                                        font.get('order', ''),
+                                                        font.get('cols', 1),
+                                                        countdown_bg_color
+                                                    )
+                                                    if sprite_img2 is None:
+                                                        raise Exception(sprite_err2 or "Sprite render failed")
+                                                    tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_countdown_sprite.png')
+                                                    sprite_img2.save(tmp_path, 'PNG')
+                                                    result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+                                                    if asyncio.iscoroutine(result):
+                                                        self.run_async(result)
+                                                return
+                                            sprite_img, sprite_err = self._build_sprite_text_image(
+                                                countdown_text,
+                                                font.get('path', ''),
+                                                font.get('order', ''),
+                                                font.get('cols', 1),
+                                                countdown_bg_color
+                                            )
+                                        else:
+                                            legacy_path = preset.get('countdown_sprite_path', '').strip()
+                                            legacy_order = preset.get('countdown_sprite_order', '')
+                                            legacy_cols = preset.get('countdown_sprite_cols', 1)
+                                            if not legacy_path:
+                                                raise Exception("Sprite font not found")
+                                            if countdown_animation == "scroll_left":
+                                                line_img, sprite_err = self._build_sprite_text_line_image(
+                                                    countdown_text,
+                                                    legacy_path,
+                                                    legacy_order,
+                                                    legacy_cols,
+                                                    countdown_bg_color
+                                                )
+                                                if line_img is None:
+                                                    raise Exception(sprite_err or "Sprite render failed")
+                                                self._start_sprite_scroll(line_img, countdown_bg_color, countdown_speed, direction="left")
+                                                return
+                                            if countdown_animation == "static":
+                                                delay_ms = max(1, int(countdown_static_delay_seconds or 2)) * 1000
+                                                frames = _build_countdown_frames()
+                                                if len(frames) > 1:
+                                                    state = {'index': 0}
 
-                                    if asyncio.iscoroutine(result):
-                                        self.run_async(result)
+                                                    def tick():
+                                                        value_text = frames[state['index']]
+                                                        sprite_img2, sprite_err2 = self._build_sprite_text_image(
+                                                            value_text,
+                                                            legacy_path,
+                                                            legacy_order,
+                                                            legacy_cols,
+                                                            countdown_bg_color
+                                                        )
+                                                        if sprite_img2 is None:
+                                                            raise Exception(sprite_err2 or "Sprite render failed")
+                                                        tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_countdown_sprite.png')
+                                                        sprite_img2.save(tmp_path, 'PNG')
+                                                        result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+                                                        if asyncio.iscoroutine(result):
+                                                            self.run_async(result)
+                                                        state['index'] = (state['index'] + 1) % len(frames)
+                                                        self.countdown_static_timer = self.root.after(delay_ms, tick)
+
+                                                    tick()
+                                                else:
+                                                    value_text = frames[0]
+                                                    sprite_img2, sprite_err2 = self._build_sprite_text_image(
+                                                        value_text,
+                                                        legacy_path,
+                                                        legacy_order,
+                                                        legacy_cols,
+                                                        countdown_bg_color
+                                                    )
+                                                    if sprite_img2 is None:
+                                                        raise Exception(sprite_err2 or "Sprite render failed")
+                                                    tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_countdown_sprite.png')
+                                                    sprite_img2.save(tmp_path, 'PNG')
+                                                    result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+                                                    if asyncio.iscoroutine(result):
+                                                        self.run_async(result)
+                                                return
+                                            sprite_img, sprite_err = self._build_sprite_text_image(
+                                                countdown_text,
+                                                legacy_path,
+                                                legacy_order,
+                                                legacy_cols,
+                                                countdown_bg_color
+                                            )
+                                        if sprite_img is None:
+                                            raise Exception(sprite_err or "Sprite render failed")
+                                        tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_countdown_sprite.png')
+                                        sprite_img.save(tmp_path, 'PNG')
+                                        result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+                                        if asyncio.iscoroutine(result):
+                                            self.run_async(result)
+                                    else:
+                                        if countdown_animation == "static":
+                                            delay_ms = max(1, int(countdown_static_delay_seconds or 2)) * 1000
+                                            frames = _build_countdown_frames()
+                                            if len(frames) > 1:
+                                                state = {'index': 0}
+
+                                                def tick():
+                                                    value_text = frames[state['index']]
+                                                    color_hex = countdown_color.lstrip('#')
+                                                    bg_color_hex = countdown_bg_color.lstrip('#')
+                                                    inverted_speed = 101 - countdown_speed
+                                                    result = self.client.send_text(
+                                                        text=value_text,
+                                                        char_height=16,
+                                                        color=color_hex,
+                                                        bg_color=bg_color_hex,
+                                                        animation=0,
+                                                        speed=inverted_speed
+                                                    )
+                                                    if asyncio.iscoroutine(result):
+                                                        self.run_async(result)
+                                                    state['index'] = (state['index'] + 1) % len(frames)
+                                                    self.countdown_static_timer = self.root.after(delay_ms, tick)
+
+                                                tick()
+                                            else:
+                                                color_hex = countdown_color.lstrip('#')
+                                                bg_color_hex = countdown_bg_color.lstrip('#')
+                                                inverted_speed = 101 - countdown_speed
+                                                result = self.client.send_text(
+                                                    text=frames[0],
+                                                    char_height=16,
+                                                    color=color_hex,
+                                                    bg_color=bg_color_hex,
+                                                    animation=0,
+                                                    speed=inverted_speed
+                                                )
+                                                if asyncio.iscoroutine(result):
+                                                    self.run_async(result)
+                                            return
+
+                                        color_hex = countdown_color.lstrip('#')
+                                        bg_color_hex = countdown_bg_color.lstrip('#')
+
+                                        # Invert speed: 1=slowest (100), 100=fastest (1)
+                                        inverted_speed = 101 - countdown_speed
+
+                                        result = self.client.send_text(
+                                            text=countdown_text,
+                                            char_height=16,
+                                            color=color_hex,
+                                            bg_color=bg_color_hex,
+                                            animation=anim_map.get(countdown_animation, 0),
+                                            speed=inverted_speed
+                                        )
+
+                                        if asyncio.iscoroutine(result):
+                                            self.run_async(result)
                                 except Exception as e:
                                     error_msg = str(e)
                                     self.root.after(0, lambda: messagebox.showerror("Error", f"Countdown update failed: {error_msg}"))
@@ -4234,13 +5292,13 @@ class iPixelController:
                 # Execute stock preset - fetch and display
                 ticker = preset.get('ticker', 'AAPL')
                 format_type = preset.get('format', 'price_change')
-                text_color = preset.get('text_color', '#00FF00')
                 bg_color = preset.get('bg_color', '#000000')
                 animation = preset.get('animation', 0)  # 0=scroll left (default)
                 speed = preset.get('speed', 30)
-                auto_color = preset.get('auto_color', True)
                 auto_refresh = preset.get('auto_refresh', False)
                 refresh_interval = preset.get('refresh_interval', 60)
+                stock_sprite_font_name = preset.get('stock_sprite_font_name', '').strip()
+                stock_static_delay_seconds = preset.get('stock_static_delay_seconds', 2)
                 
                 def fetch_and_send():
                     try:
@@ -4270,37 +5328,97 @@ class iPixelController:
                             text = price_str
                         else:  # ticker_price
                             text = f"{ticker} {price_str}"
-                        
-                        # Determine color
-                        if auto_color:
-                            display_color = "#00FF00" if change >= 0 else "#FF0000"
+
+                        def send_text_value(value_text):
+                            def send_task():
+                                try:
+                                    font = self._get_sprite_font_by_name(stock_sprite_font_name)
+                                    if not font:
+                                        legacy_path = preset.get('stock_sprite_path', '').strip()
+                                        legacy_order = preset.get('stock_sprite_order', '')
+                                        legacy_cols = preset.get('stock_sprite_cols', 1)
+                                        if not legacy_path:
+                                            raise Exception("Sprite font not found")
+                                        if animation in (1, 2):
+                                            line_img, sprite_err = self._build_sprite_text_line_image(
+                                                value_text,
+                                                legacy_path,
+                                                legacy_order,
+                                                legacy_cols,
+                                                bg_color
+                                            )
+                                            if line_img is None:
+                                                raise Exception(sprite_err or "Sprite render failed")
+                                            direction = "right" if animation == 2 else "left"
+                                            self._start_sprite_scroll(line_img, bg_color, speed, direction=direction)
+                                            return
+                                        sprite_img, sprite_err = self._build_sprite_text_image(
+                                            value_text,
+                                            legacy_path,
+                                            legacy_order,
+                                            legacy_cols,
+                                            bg_color
+                                        )
+                                    else:
+                                        if animation in (1, 2):
+                                            line_img, sprite_err = self._build_sprite_text_line_image(
+                                                value_text,
+                                                font.get('path', ''),
+                                                font.get('order', ''),
+                                                font.get('cols', 1),
+                                                bg_color
+                                            )
+                                            if line_img is None:
+                                                raise Exception(sprite_err or "Sprite render failed")
+                                            direction = "right" if animation == 2 else "left"
+                                            self._start_sprite_scroll(line_img, bg_color, speed, direction=direction)
+                                            return
+                                        sprite_img, sprite_err = self._build_sprite_text_image(
+                                            value_text,
+                                            font.get('path', ''),
+                                            font.get('order', ''),
+                                            font.get('cols', 1),
+                                            bg_color
+                                        )
+
+                                    if sprite_img is None:
+                                        raise Exception(sprite_err or "Sprite render failed")
+                                    tmp_path = os.path.join(tempfile.gettempdir(), 'ipixel_stock_sprite.png')
+                                    sprite_img.save(tmp_path, 'PNG')
+                                    result = self.client.send_image(tmp_path, resize_method='crop', save_slot=0)
+                                    if asyncio.iscoroutine(result):
+                                        self.run_async(result)
+                                except Exception as e:
+                                    error_msg = str(e)
+                                    self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to send: {error_msg}"))
+
+                            threading.Thread(target=send_task, daemon=True).start()
+
+                        def start_static_cycle():
+                            if self.stock_static_timer:
+                                self.root.after_cancel(self.stock_static_timer)
+                            state = {'show_ticker': True}
+                            delay_ms = max(1, int(stock_static_delay_seconds or 2)) * 1000
+
+                            def tick():
+                                if format_type == "ticker_price":
+                                    send_text_value(ticker if state['show_ticker'] else price_str)
+                                    state['show_ticker'] = not state['show_ticker']
+                                elif format_type == "price_change":
+                                    change_symbol = "↑" if change >= 0 else "↓"
+                                    change_text = f"{change_symbol}{abs(change_percent):.1f}%"
+                                    send_text_value(price_str if state['show_ticker'] else change_text)
+                                    state['show_ticker'] = not state['show_ticker']
+                                else:
+                                    send_text_value(price_str)
+                                self.stock_static_timer = self.root.after(delay_ms, tick)
+
+                            tick()
+
+                        if animation == 0 and format_type in ("ticker_price", "price_change"):
+                            start_static_cycle()
                         else:
-                            display_color = text_color
-                        
-                        # Send to display
-                        def send_task():
-                            try:
-                                color_hex = display_color.lstrip('#')
-                                bg_color_hex = bg_color.lstrip('#')
-                                inverted_speed = 101 - speed
-                                
-                                result = self.client.send_text(
-                                    text,
-                                    char_height=16,
-                                    color=color_hex,
-                                    bg_color=bg_color_hex,
-                                    animation=animation,
-                                    speed=inverted_speed,
-                                    rainbow_mode=0
-                                )
-                                
-                                if asyncio.iscoroutine(result):
-                                    self.run_async(result)
-                            except Exception as e:
-                                error_msg = str(e)
-                                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to send: {error_msg}"))
-                        
-                        threading.Thread(target=send_task, daemon=True).start()
+                            send_text_value(text)
                         
                         # Schedule auto-refresh
                         if auto_refresh:
@@ -4323,13 +5441,16 @@ class iPixelController:
             elif preset_type == "youtube":
                 # Execute YouTube preset
                 self.youtube_channel_var.set(preset.get('channel', ''))
-                self.youtube_format_var.set(preset.get('format', 'subs_views'))
                 self.youtube_text_color = preset.get('text_color', '#FFFFFF')
                 self.youtube_bg_color = preset.get('bg_color', '#000000')
-                self.youtube_animation_var.set(preset.get('animation', 'scroll'))
-                self.youtube_speed_var.set(preset.get('speed', 50))
                 self.youtube_auto_refresh_var.set(preset.get('auto_refresh', False))
                 self.youtube_refresh_interval_var.set(preset.get('refresh_interval', 300))
+                self.youtube_use_sprite_var.set(preset.get('youtube_use_sprite_font', False))
+                self.youtube_sprite_font_var.set(preset.get('youtube_sprite_font_name', '').strip())
+                self.youtube_show_logo_var.set(preset.get('youtube_show_logo', False))
+                self.youtube_logo_path_var.set(preset.get('youtube_logo_path', os.path.join("Gallery", "Sprites", "YT-btn.png")))
+                self.update_youtube_sprite_settings()
+                self.update_youtube_logo_settings()
                 
                 # Fetch and send
                 self.fetch_youtube_stats()
