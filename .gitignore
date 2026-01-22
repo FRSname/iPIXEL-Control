@@ -6,6 +6,7 @@
 
 # Settings and API keys (DO NOT COMMIT)
 ipixel_settings.json
+ipixel_secrets.json
 
 # Python cache
 __pycache__/
