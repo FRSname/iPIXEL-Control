@@ -38,10 +38,12 @@ class iPixelController:
         # Initialize presets
         self.presets_file = "ipixel_presets.json"
         self.settings_file = "ipixel_settings.json"
+        self.secrets_file = "ipixel_secrets.json"
         self.presets = []
         self.thumbnail_cache = {}  # Cache for PhotoImage objects
         self.load_presets()
         self.settings = self.load_settings()
+        self.secrets = self.load_secrets()
         default_text_sprite_path = os.path.join("Gallery", "Sprites", "TextSprite.png")
         default_clock_sprite_path = os.path.join("Gallery", "Sprites", "SmallerClocksSprite-transp.png")
         default_youtube_logo_path = os.path.join("Gallery", "Sprites", "YT-btn.png")
@@ -1576,13 +1578,13 @@ class iPixelController:
         """Save YouTube API key to settings"""
         api_key = self.youtube_api_key_var.get().strip()
         if api_key:
-            self.settings['youtube_api_key'] = api_key
-            self.save_settings()
+            self.secrets['youtube_api_key'] = api_key
+            self.save_secrets()
             messagebox.showinfo("Success", "YouTube API key saved")
     
     def load_youtube_api_key(self):
         """Load YouTube API key from settings"""
-        api_key = self.settings.get('youtube_api_key', '')
+        api_key = self.secrets.get('youtube_api_key', '')
         self.youtube_api_key_var.set(api_key)
     
     def choose_youtube_color(self):
@@ -1886,13 +1888,13 @@ class iPixelController:
         """Save weather API key to settings"""
         api_key = self.weather_api_key_var.get().strip()
         if api_key:
-            self.settings['weather_api_key'] = api_key
-            self.save_settings()
+            self.secrets['weather_api_key'] = api_key
+            self.save_secrets()
             messagebox.showinfo("Success", "Weather API key saved")
     
     def load_weather_api_key(self):
         """Load weather API key from settings"""
-        api_key = self.settings.get('weather_api_key', '')
+        api_key = self.secrets.get('weather_api_key', '')
         self.weather_api_key_var.set(api_key)
     
     def choose_weather_color(self):
@@ -4158,6 +4160,29 @@ class iPixelController:
                 json.dump(self.settings, f, indent=2)
         except Exception as e:
             print(f"Failed to save settings: {e}")
+
+    def load_secrets(self):
+        """Load API keys from a secrets file"""
+        try:
+            if os.path.exists(self.secrets_file):
+                with open(self.secrets_file, 'r') as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        return data
+        except Exception as e:
+            print(f"Failed to load secrets: {e}")
+        return {
+            'weather_api_key': '',
+            'youtube_api_key': ''
+        }
+
+    def save_secrets(self):
+        """Save API keys to a secrets file"""
+        try:
+            with open(self.secrets_file, 'w') as f:
+                json.dump(self.secrets, f, indent=2)
+        except Exception as e:
+            print(f"Failed to save secrets: {e}")
     
     def auto_connect_to_last_device(self):
         """Automatically connect to the last connected device"""
