@@ -19,11 +19,11 @@
   "countdown_sprite_path": "Gallery/Sprites/TextSprite.png",
   "countdown_sprite_order": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/",
   "countdown_sprite_cols": 71,
-  "text_sprite_font_name": "Text Default",
+  "text_sprite_font_name": "Text Thin White",
   "countdown_sprite_font_name": "Text Default",
-  "clock_time_sprite_font_name": "Clock Default",
+  "clock_time_sprite_font_name": "Text Default",
   "stock_use_sprite_font": true,
-  "stock_sprite_font_name": "Text Default",
+  "stock_sprite_font_name": "Text Long White",
   "sprite_fonts": [
     {
       "name": "Default",
@@ -34,6 +34,54 @@
     {
       "name": "Text Default",
       "path": "Gallery/Sprites/TextSprite.png",
+      "order": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%",
+      "cols": 73
+    },
+    {
+      "name": "Text Long",
+      "path": "Gallery/Sprites/Text-Long-Sprite.png",
+      "order": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%",
+      "cols": 73
+    },
+    {
+      "name": "Text Long White",
+      "path": "Gallery/Sprites/Text-Long-White-Sprite.png",
+      "order": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%",
+      "cols": 73
+    },
+    {
+      "name": "Text Long Yellow",
+      "path": "Gallery/Sprites/Text-Long-Yellow-Sprite.png",
+      "order": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%",
+      "cols": 73
+    },
+    {
+      "name": "Text Thin",
+      "path": "Gallery/Sprites/Text-thin-Sprite.png",
+      "order": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%",
+      "cols": 73
+    },
+    {
+      "name": "Text Thin White",
+      "path": "Gallery/Sprites/Text-thin-White-Sprite.png",
+      "order": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%",
+      "cols": 73
+    },
+    {
+      "name": "Text Thin Yellow",
+      "path": "Gallery/Sprites/Text-thin-Yellow-Sprite.png",
+      "order": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%",
+      "cols": 73
+    },
+    {
+      "name": "Text White",
+      "path": "Gallery/Sprites/TextSpriteWhite.png",
+      "order": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%",
+      "cols": 73
+    },
+    {
+      "name": "Text Yellow",
+      "path": "Gallery/Sprites/TextSpriteYellow.png",
       "order": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%",
       "cols": 73
     },
@@ -52,5 +100,12 @@
   "youtube_sprite_font_name": "Text Default",
   "youtube_show_logo": true,
   "youtube_logo_path": "Gallery/Sprites/YT-btn.png",
-  "youtube_logo_delay_seconds": 2
+  "youtube_logo_delay_seconds": 2,
+  "teams_client_id": "",
+  "teams_tenant_id": "",
+  "teams_client_secret": "",
+  "teams_available_preset": "Heart",
+  "teams_busy_preset": "Busy",
+  "teams_dnd_preset": "REC",
+  "teams_meeting_preset": "OFFLINE"
 }

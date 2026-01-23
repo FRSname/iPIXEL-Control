@@ -9,6 +9,8 @@ from tkinter import ttk, messagebox, filedialog, colorchooser
 import asyncio
 import threading
 from PIL import Image, ImageTk, ImageDraw, ImageFont
+import requests
+import urllib.parse
 import os
 import sys
 import tempfile
@@ -109,13 +111,17 @@ class iPixelController:
                 if not self.settings.get('clock_time_sprite_font_name'):
                     self.settings['clock_time_sprite_font_name'] = 'Clock Default'
                 self.save_settings()
+
+        self._ensure_default_sprite_fonts()
         
         # Teams status monitoring
         self.teams_monitoring = False
         self.teams_access_token = None
         self.teams_refresh_token = None
         self.teams_last_status = None
+        self.teams_last_error = None
         self.teams_timer = None
+        self.teams_debug_info = None
         self.stock_refresh_timer = None
         self.stock_static_timer = None
         self.sprite_scroll_timer = None
@@ -1012,12 +1018,7 @@ class iPixelController:
             messagebox.showwarning("No Data", "Please fetch stock data first")
             return
         
-        # Stop any running stock auto-refresh from presets
-        self.stop_stock_refresh()
-        self._stop_sprite_scroll()
-        if self.stock_static_timer:
-            self.root.after_cancel(self.stock_static_timer)
-            self.stock_static_timer = None
+        self._stop_active_display_tasks()
         
         # Format text based on selected format
         format_type = self.stock_format_var.get()
@@ -1714,8 +1715,7 @@ class iPixelController:
             messagebox.showwarning("No Data", "Please fetch YouTube data first")
             return
         
-        # Stop any running stock auto-refresh from presets
-        self.stop_stock_refresh()
+        self._stop_active_display_tasks()
         
         data = self.current_youtube_data
         text = self.format_number(data['subscribers'])
@@ -2031,12 +2031,7 @@ class iPixelController:
             messagebox.showwarning("No Data", "Please fetch weather data first")
             return
         
-        # Stop any running stock auto-refresh
-        self.stop_stock_refresh()
-        self._stop_sprite_scroll()
-        if self.text_static_timer:
-            self.root.after_cancel(self.text_static_timer)
-            self.text_static_timer = None
+        self._stop_active_display_tasks()
         
         format_type = self.weather_format_var.get()
         data = self.current_weather_data
@@ -2291,6 +2286,8 @@ class iPixelController:
         if not self.is_connected:
             messagebox.showwarning("Not Connected", "Please connect to a device first")
             return
+
+        self._stop_active_display_tasks()
         
         self.animation_running = True
         self.send_anim_btn.config(state=tk.DISABLED)
@@ -2480,20 +2477,24 @@ class iPixelController:
         ttk.Label(monitor_frame, text="Current Status:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
         self.teams_current_status_var = tk.StringVar(value="Unknown")
         ttk.Label(monitor_frame, textvariable=self.teams_current_status_var, 
-                 font=('TkDefaultFont', 10, 'bold')).grid(row=0, column=1, sticky=tk.W)
+             font=('TkDefaultFont', 10, 'bold')).grid(row=0, column=1, sticky=tk.W)
+
+        self.teams_debug_var = tk.StringVar(value="Debug: idle")
+        ttk.Label(monitor_frame, textvariable=self.teams_debug_var,
+             font=('TkDefaultFont', 8, 'italic'), foreground='gray').grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(2, 0))
         
         # Refresh interval
-        ttk.Label(monitor_frame, text="Check every:").grid(row=1, column=0, sticky=tk.W, padx=(0, 10), pady=(10, 0))
+        ttk.Label(monitor_frame, text="Check every:").grid(row=2, column=0, sticky=tk.W, padx=(0, 10), pady=(10, 0))
         self.teams_refresh_var = tk.IntVar(value=self.settings.get('teams_refresh_interval', 30))
         interval_frame = ttk.Frame(monitor_frame)
-        interval_frame.grid(row=1, column=1, sticky=tk.W, pady=(10, 0))
+        interval_frame.grid(row=2, column=1, sticky=tk.W, pady=(10, 0))
         ttk.Spinbox(interval_frame, from_=10, to=300, textvariable=self.teams_refresh_var, 
                    width=10).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Label(interval_frame, text="seconds").pack(side=tk.LEFT)
         
         # Control buttons
         control_frame = ttk.Frame(monitor_frame)
-        control_frame.grid(row=2, column=0, columnspan=2, pady=(15, 0))
+        control_frame.grid(row=3, column=0, columnspan=2, pady=(15, 0))
         
         self.start_teams_btn = ttk.Button(control_frame, text="▶️ Start Monitoring", 
                                          command=self.start_teams_monitoring)
@@ -2506,7 +2507,7 @@ class iPixelController:
         # Status info
         self.teams_monitor_status_var = tk.StringVar(value="Monitoring: Not running")
         ttk.Label(monitor_frame, textvariable=self.teams_monitor_status_var, 
-                 font=('TkDefaultFont', 9, 'italic'), foreground='gray').grid(row=3, column=0, columnspan=2, pady=(10, 0))
+                 font=('TkDefaultFont', 9, 'italic'), foreground='gray').grid(row=4, column=0, columnspan=2, pady=(10, 0))
     
     def save_teams_mapping(self, setting_name):
         """Save Teams status to preset mapping"""
@@ -2520,8 +2521,10 @@ class iPixelController:
             "Microsoft Teams Authentication",
             "To access your Teams status, you need to:\n\n"
             "1. Register an app in Azure Active Directory\n"
-            "2. Grant 'Presence.Read' permission\n"
-            "3. Get your Client ID and Tenant ID\n\n"
+            "2. Grant 'Presence.Read.All' (Application) permission\n"
+            "3. Admin-consent the permission\n"
+            "4. Get your Client ID and Tenant ID\n"
+            "5. Provide a User ID or UPN (email) to monitor\n\n"
             "This requires a Microsoft 365 account.\n\n"
             "See the documentation for detailed setup instructions:\n"
             "https://docs.microsoft.com/graph/auth-v2-user"
@@ -2540,33 +2543,41 @@ class iPixelController:
         ttk.Label(dialog, text="Client ID (Application ID):").pack(anchor=tk.W, padx=20, pady=(10, 0))
         client_id_entry = ttk.Entry(dialog, width=60)
         client_id_entry.pack(padx=20, pady=(0, 10))
-        client_id_entry.insert(0, self.settings.get('teams_client_id', ''))
+        client_id_entry.insert(0, self.secrets.get('teams_client_id', ''))
         
         # Tenant ID
         ttk.Label(dialog, text="Tenant ID (Directory ID):").pack(anchor=tk.W, padx=20)
         tenant_id_entry = ttk.Entry(dialog, width=60)
         tenant_id_entry.pack(padx=20, pady=(0, 10))
-        tenant_id_entry.insert(0, self.settings.get('teams_tenant_id', ''))
+        tenant_id_entry.insert(0, self.secrets.get('teams_tenant_id', ''))
         
         # Client Secret
         ttk.Label(dialog, text="Client Secret:").pack(anchor=tk.W, padx=20)
         secret_entry = ttk.Entry(dialog, width=60, show="*")
         secret_entry.pack(padx=20, pady=(0, 15))
-        secret_entry.insert(0, self.settings.get('teams_client_secret', ''))
+        secret_entry.insert(0, self.secrets.get('teams_client_secret', ''))
+
+        # User ID / UPN
+        ttk.Label(dialog, text="User ID / UPN (email):").pack(anchor=tk.W, padx=20)
+        user_id_entry = ttk.Entry(dialog, width=60)
+        user_id_entry.pack(padx=20, pady=(0, 15))
+        user_id_entry.insert(0, self.secrets.get('teams_user_id', ''))
         
         def save_credentials():
             client_id = client_id_entry.get().strip()
             tenant_id = tenant_id_entry.get().strip()
             client_secret = secret_entry.get().strip()
+            user_id = user_id_entry.get().strip()
             
-            if not all([client_id, tenant_id, client_secret]):
+            if not all([client_id, tenant_id, client_secret, user_id]):
                 messagebox.showwarning("Missing Info", "Please fill in all fields")
                 return
             
-            self.settings['teams_client_id'] = client_id
-            self.settings['teams_tenant_id'] = tenant_id
-            self.settings['teams_client_secret'] = client_secret
-            self.save_settings()
+            self.secrets['teams_client_id'] = client_id
+            self.secrets['teams_tenant_id'] = tenant_id
+            self.secrets['teams_client_secret'] = client_secret
+            self.secrets['teams_user_id'] = user_id
+            self.save_secrets()
             
             self.teams_auth_status_var.set("✓ Credentials saved. Ready to monitor!")
             dialog.destroy()
@@ -2577,11 +2588,12 @@ class iPixelController:
     def signout_teams(self):
         """Sign out from Teams monitoring"""
         self.stop_teams_monitoring()
-        self.settings['teams_client_id'] = ''
-        self.settings['teams_tenant_id'] = ''
-        self.settings['teams_client_secret'] = ''
+        self.secrets['teams_client_id'] = ''
+        self.secrets['teams_tenant_id'] = ''
+        self.secrets['teams_client_secret'] = ''
+        self.secrets['teams_user_id'] = ''
         self.teams_access_token = None
-        self.save_settings()
+        self.save_secrets()
         self.teams_auth_status_var.set("Not authenticated")
         messagebox.showinfo("Signed Out", "Microsoft Teams credentials have been removed.")
     
@@ -2589,9 +2601,10 @@ class iPixelController:
         """Start monitoring Teams status"""
         # Check if authenticated
         if not all([
-            self.settings.get('teams_client_id'),
-            self.settings.get('teams_tenant_id'),
-            self.settings.get('teams_client_secret')
+            self.secrets.get('teams_client_id'),
+            self.secrets.get('teams_tenant_id'),
+            self.secrets.get('teams_client_secret'),
+            self.secrets.get('teams_user_id')
         ]):
             messagebox.showwarning("Not Authenticated", "Please authenticate with Microsoft first.")
             return
@@ -2626,10 +2639,23 @@ class iPixelController:
         
         def fetch_status():
             try:
+                user_id = self.secrets.get('teams_user_id', '').strip()
+                if not user_id:
+                    self.root.after(0, lambda: messagebox.showwarning(
+                        "Missing User", "Please provide a Teams User ID or UPN in the Teams settings."
+                    ))
+                    self.root.after(0, self.stop_teams_monitoring)
+                    return
+
+                user_id_encoded = urllib.parse.quote(user_id, safe="")
+                self.root.after(0, lambda: self.teams_debug_var.set("Debug: checking presence..."))
+
                 # Get access token if needed
                 if not self.teams_access_token:
                     token_response = self.get_teams_access_token()
                     if not token_response:
+                        err = self.teams_last_error or "Authentication failed"
+                        self.root.after(0, lambda e=err: self.teams_current_status_var.set(f"Error: {e}"))
                         self.root.after(0, lambda: messagebox.showerror(
                             "Authentication Failed", 
                             "Could not authenticate with Microsoft Graph API. Check your credentials."
@@ -2646,7 +2672,7 @@ class iPixelController:
                 
                 # Use Graph API to get presence
                 response = requests.get(
-                    'https://graph.microsoft.com/v1.0/me/presence',
+                    f'https://graph.microsoft.com/v1.0/users/{user_id_encoded}/presence',
                     headers=headers,
                     timeout=10
                 )
@@ -2661,20 +2687,36 @@ class iPixelController:
                     data = response.json()
                     availability = data.get('availability', 'Unknown')
                     activity = data.get('activity', 'Unknown')
+                    self.teams_last_error = None
+                    self.root.after(0, lambda: self.teams_debug_var.set("Debug: presence OK"))
+
+                    status_display = availability if availability and availability != 'Unknown' else activity
+                    status_display = status_display if status_display else 'Unknown'
                     
                     # Update UI with current status
-                    self.root.after(0, lambda: self.teams_current_status_var.set(
-                        f"{availability} ({activity})"
+                    self.root.after(0, lambda s=status_display, a=activity: self.teams_current_status_var.set(
+                        f"{s} ({a})"
                     ))
                     
                     # Check if status changed
-                    if availability != self.teams_last_status:
-                        self.teams_last_status = availability
-                        self.root.after(0, lambda: self.handle_teams_status_change(availability))
+                    status_key = availability
+                    if not status_key or status_key == 'Unknown':
+                        status_key = activity
+
+                    if status_key != self.teams_last_status:
+                        self.teams_last_status = status_key
+                        self.root.after(0, lambda s=status_key: self.handle_teams_status_change(s))
                 else:
+                    error_summary = f"{response.status_code} {response.reason}" if hasattr(response, 'reason') else f"{response.status_code}"
+                    self.teams_last_error = f"Presence error: {error_summary}"
+                    self.root.after(0, lambda e=self.teams_last_error: self.teams_current_status_var.set(f"Error: {e}"))
+                    self.root.after(0, lambda e=self.teams_last_error: self.teams_debug_var.set(f"Debug: {e}"))
                     print(f"Teams API error: {response.status_code} - {response.text}")
                     
             except Exception as e:
+                self.teams_last_error = f"Presence error: {e}"
+                self.root.after(0, lambda e=self.teams_last_error: self.teams_current_status_var.set(f"Error: {e}"))
+                self.root.after(0, lambda e=self.teams_last_error: self.teams_debug_var.set(f"Debug: {e}"))
                 print(f"Error checking Teams status: {e}")
         
         # Run in background thread
@@ -2689,9 +2731,9 @@ class iPixelController:
         try:
             import requests
             
-            tenant_id = self.settings.get('teams_tenant_id')
-            client_id = self.settings.get('teams_client_id')
-            client_secret = self.settings.get('teams_client_secret')
+            tenant_id = self.secrets.get('teams_tenant_id')
+            client_id = self.secrets.get('teams_client_id')
+            client_secret = self.secrets.get('teams_client_secret')
             
             # Using client credentials flow (requires admin consent)
             token_url = f'https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token'
@@ -2706,12 +2748,18 @@ class iPixelController:
             response = requests.post(token_url, data=data, timeout=10)
             
             if response.status_code == 200:
+                self.teams_last_error = None
+                self.root.after(0, lambda: self.teams_debug_var.set("Debug: token OK"))
                 return response.json()['access_token']
             else:
+                self.teams_last_error = f"Token error: {response.status_code}"
+                self.root.after(0, lambda e=self.teams_last_error: self.teams_debug_var.set(f"Debug: {e}"))
                 print(f"Token error: {response.status_code} - {response.text}")
                 return None
                 
         except Exception as e:
+            self.teams_last_error = f"Token error: {e}"
+            self.root.after(0, lambda e=self.teams_last_error: self.teams_debug_var.set(f"Debug: {e}"))
             print(f"Error getting access token: {e}")
             return None
     
@@ -3001,17 +3049,7 @@ class iPixelController:
             messagebox.showwarning("No Text", "Please enter text to display")
             return
 
-        if self.text_static_timer:
-            self.root.after_cancel(self.text_static_timer)
-            self.text_static_timer = None
-        self._stop_sprite_scroll()
-        
-        # Stop any running live clock
-        if hasattr(self, 'clock_running') and self.clock_running:
-            self.stop_live_clock()
-        
-        # Stop any running stock auto-refresh
-        self.stop_stock_refresh()
+        self._stop_active_display_tasks()
         
         # Clear last preset to prevent auto-restore from overriding manual text
         self.settings['last_preset'] = None
@@ -3221,12 +3259,7 @@ class iPixelController:
             messagebox.showwarning("Missing Image", f"Image not found: {image_path}")
             return
         
-        # Stop any running live clock
-        if hasattr(self, 'clock_running') and self.clock_running:
-            self.stop_live_clock()
-        
-        # Stop any running stock auto-refresh
-        self.stop_stock_refresh()
+        self._stop_active_display_tasks()
         
         # Clear last preset to prevent auto-restore from overriding manual image
         self.settings['last_preset'] = None
@@ -3291,6 +3324,83 @@ class iPixelController:
 
     def _get_sprite_fonts(self):
         return self.settings.get('sprite_fonts', []) or []
+
+    def _ensure_default_sprite_fonts(self):
+        defaults = [
+            {
+                'name': 'Text Default',
+                'path': os.path.join('Gallery', 'Sprites', 'TextSprite.png'),
+                'order': '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%',
+                'cols': 73
+            },
+            {
+                'name': 'Text Long',
+                'path': os.path.join('Gallery', 'Sprites', 'Text-Long-Sprite.png'),
+                'order': '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%',
+                'cols': 73
+            },
+            {
+                'name': 'Text Long White',
+                'path': os.path.join('Gallery', 'Sprites', 'Text-Long-White-Sprite.png'),
+                'order': '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%',
+                'cols': 73
+            },
+            {
+                'name': 'Text Long Yellow',
+                'path': os.path.join('Gallery', 'Sprites', 'Text-Long-Yellow-Sprite.png'),
+                'order': '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%',
+                'cols': 73
+            },
+            {
+                'name': 'Text Thin',
+                'path': os.path.join('Gallery', 'Sprites', 'Text-thin-Sprite.png'),
+                'order': '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%',
+                'cols': 73
+            },
+            {
+                'name': 'Text Thin White',
+                'path': os.path.join('Gallery', 'Sprites', 'Text-thin-White-Sprite.png'),
+                'order': '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%',
+                'cols': 73
+            },
+            {
+                'name': 'Text Thin Yellow',
+                'path': os.path.join('Gallery', 'Sprites', 'Text-thin-Yellow-Sprite.png'),
+                'order': '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%',
+                'cols': 73
+            },
+            {
+                'name': 'Text White',
+                'path': os.path.join('Gallery', 'Sprites', 'TextSpriteWhite.png'),
+                'order': '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%',
+                'cols': 73
+            },
+            {
+                'name': 'Text Yellow',
+                'path': os.path.join('Gallery', 'Sprites', 'TextSpriteYellow.png'),
+                'order': '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:!?.,+-/$%',
+                'cols': 73
+            },
+            {
+                'name': 'Clock Default',
+                'path': os.path.join('Gallery', 'Sprites', 'SmallerClocksSprite-transp.png'),
+                'order': '0123456789:',
+                'cols': 11
+            }
+        ]
+
+        fonts = self._get_sprite_fonts()
+        existing = {f.get('name') for f in fonts if f.get('name')}
+        added = False
+
+        for entry in defaults:
+            if entry['name'] not in existing:
+                fonts.append(entry)
+                added = True
+
+        if added:
+            self.settings['sprite_fonts'] = fonts
+            self.save_settings()
 
     def _get_sprite_font_names(self):
         return [f.get('name', '') for f in self._get_sprite_fonts() if f.get('name')]
@@ -3844,6 +3954,33 @@ class iPixelController:
         if self.stock_static_timer:
             self.root.after_cancel(self.stock_static_timer)
             self.stock_static_timer = None
+
+    def _stop_active_display_tasks(self):
+        if hasattr(self, 'clock_running') and self.clock_running:
+            self.stop_live_clock()
+
+        if self.animation_running:
+            self.stop_animation()
+
+        self._stop_sprite_scroll()
+
+        if self.text_static_timer:
+            self.root.after_cancel(self.text_static_timer)
+            self.text_static_timer = None
+
+        if self.countdown_static_timer:
+            self.root.after_cancel(self.countdown_static_timer)
+            self.countdown_static_timer = None
+
+        if self.youtube_refresh_job:
+            self.root.after_cancel(self.youtube_refresh_job)
+            self.youtube_refresh_job = None
+
+        if self.weather_refresh_job:
+            self.root.after_cancel(self.weather_refresh_job)
+            self.weather_refresh_job = None
+
+        self.stop_stock_refresh()
     
     def start_countdown(self):
         """Start a countdown timer"""
