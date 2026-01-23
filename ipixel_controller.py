@@ -17,10 +17,24 @@ import tempfile
 import math
 import json
 
+# Import new utilities
+from utils.logger import get_logger, set_debug_mode
+from utils.themes import get_theme_manager, get_colors
+from utils.preset_filters import filter_presets, get_preset_categories
+from core.connection_manager import ConnectionManager, ConnectionState
+from core.playlist_manager import PlaylistManager
+from core.preset_manager import PresetManager
+from integrations import YouTubeAPI, WeatherAPI, StockAPI, TeamsAPI
+from ui.tabs import ControlBoardTab, TextTab
+
+# Initialize logger
+logger = get_logger()
+
 try:
     from pypixelcolor import Client
     from bleak import BleakScanner
 except ImportError:
+    logger.error("Required libraries not installed. Please run: pip install pypixelcolor bleak pillow")
     print("Required libraries not installed. Please run: pip install pypixelcolor bleak pillow")
     sys.exit(1)
 
@@ -37,13 +51,17 @@ class iPixelController:
         self.is_connected = False
         self.loop = None
         
-        # Initialize presets
+        # Initialize PresetManager
         self.presets_file = "ipixel_presets.json"
+        self.preset_manager = PresetManager(
+            presets_file=self.presets_file,
+            asset_resolver=self._resolve_asset_path
+        )
+        self.presets = self.preset_manager.presets
+        
         self.settings_file = "ipixel_settings.json"
         self.secrets_file = "ipixel_secrets.json"
-        self.presets = []
         self.thumbnail_cache = {}  # Cache for PhotoImage objects
-        self.load_presets()
         self.settings = self.load_settings()
         self.secrets = self.load_secrets()
         default_text_sprite_path = os.path.join("Gallery", "Sprites", "TextSprite.png")
@@ -129,11 +147,40 @@ class iPixelController:
         self.text_static_timer = None
         self.countdown_static_timer = None
         
+        # Playlist state variables for UI tracking
+        self.current_playlist_name_var = tk.StringVar(value="(Unsaved playlist)")
+        self.playlist_status_var = tk.StringVar(value="Playlist: Not running")
+        
+        # Initialize Integration Clients
+        self.stock_client = StockAPI()
+        self.youtube_client = None
+        self.weather_client = None
+        self.teams_client = None
+        
+        # Initialize PlaylistManager
+        self.playlist_manager = PlaylistManager(
+            playlists_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "playlists")
+        )
+        self.playlist = self.playlist_manager.playlist
+        self.playlist_timer = None
+        
+        # Initialize ConnectionManager
+        self.connection_manager = ConnectionManager(
+            on_state_change=self.on_connection_state_change,
+            on_reconnect_attempt=self.on_reconnect_attempt,
+            reconnect_callback=self._async_reconnect
+        )
+        self.connection_manager.auto_reconnect_enabled = self.settings.get('auto_reconnect_enabled', True)
+        self.connection_manager.max_reconnect_attempts = self.settings.get('max_reconnect_attempts', 5)
+        
         # Setup UI
         self.setup_ui()
         
         # Start async event loop in separate thread
         self.start_event_loop()
+        
+        # Setup keyboard shortcuts
+        self.setup_keyboard_shortcuts()
         
         # Auto-connect to last device if enabled
         if self.settings.get('auto_connect', True):
@@ -177,11 +224,12 @@ class iPixelController:
         # Notebook for different control modes (keeping ttk.Notebook for simplicity)
         self.notebook = ttk.Notebook(main_frame)
         self.notebook.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10), padx=10)
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
         main_frame.rowconfigure(1, weight=1)
         
         # Create tab contents
-        self.create_control_board_tab()
-        self.create_text_tab()
+        self.control_board_tab = ControlBoardTab(self.notebook, self)
+        self.text_tab = TextTab(self.notebook, self)
         self.create_image_tab()
         self.create_clock_tab()
         self.create_stock_tab()
@@ -190,251 +238,46 @@ class iPixelController:
         self.create_animations_tab()
         self.create_teams_status_tab()
         self.create_settings_tab()
+    
+    def setup_keyboard_shortcuts(self):
+        """Setup keyboard shortcuts for the application"""
+        # Tab switching: Ctrl+1 through Ctrl+9
+        for i in range(1, 10):
+            self.root.bind(f'<Control-Key-{i}>', lambda e, idx=i-1: self.switch_to_tab(idx))
         
-    def create_control_board_tab(self):
-        """Create the control board with preset buttons"""
-        control_frame = ttk.Frame(self.notebook, padding="10")
-        self.notebook.add(control_frame, text="Control Board")
+        # Save preset: Ctrl+S
+        self.root.bind('<Control-s>', lambda e: self.save_current_preset())
         
-        control_frame.columnconfigure(0, weight=1)
+        # Refresh/Reconnect: Ctrl+R
+        self.root.bind('<Control-r>', lambda e: self.scan_devices())
         
-        # Info
-        info_label = ttk.Label(control_frame, 
-                              text="Quick access to saved presets. Create presets in other tabs and save them here.",
-                              font=('TkDefaultFont', 9, 'italic'), wraplength=750)
-        info_label.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        # Play/Pause playlist: Space (when not typing)
+        # This is handled carefully to not interfere with text input
         
-        # Preset buttons area
-        self.presets_frame = ttk.LabelFrame(control_frame, text="Saved Presets", padding="10")
-        self.presets_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
-        control_frame.rowconfigure(1, weight=1)
+        logger.info("Keyboard shortcuts initialized")
+    
+    def switch_to_tab(self, index):
+        """Switch to a specific tab by index"""
+        try:
+            if index < len(self.notebook.tabs()):
+                self.notebook.select(index)
+                logger.debug(f"Switched to tab {index}")
+        except Exception as e:
+            logger.error(f"Failed to switch tab: {e}")
+            
+    def _on_tab_changed(self, event):
+        """Called when user switches tabs"""
+        current_tab = self.notebook.index("current")
+        self.settings['last_tab_index'] = current_tab
+        self.save_settings()
+        logger.debug(f"Saved last tab index: {current_tab}")
+    
+    def clear_preset_filter(self):
+        """Clear preset search and category filter"""
+        self.preset_search_var.set('')
+        self.preset_category_var.set('all')
+        logger.debug("Preset filters cleared")
         
-        # Container for preset buttons (with scrollbar)
-        canvas_frame = ttk.Frame(self.presets_frame)
-        canvas_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self.presets_canvas = tk.Canvas(canvas_frame, height=400)
-        scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=self.presets_canvas.yview)
-        self.presets_scrollable_frame = ttk.Frame(self.presets_canvas)
-        
-        self.presets_scrollable_frame.bind(
-            "<Configure>",
-            lambda e: self.presets_canvas.configure(scrollregion=self.presets_canvas.bbox("all"))
-        )
-        
-        self.presets_canvas.create_window((0, 0), window=self.presets_scrollable_frame, anchor="nw")
-        self.presets_canvas.configure(yscrollcommand=scrollbar.set)
-        
-        self.presets_canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        def _on_mousewheel(event):
-            if event.num == 4:
-                self.presets_canvas.yview_scroll(-1, "units")
-            elif event.num == 5:
-                self.presets_canvas.yview_scroll(1, "units")
-            else:
-                self.presets_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-        def _bind_mousewheel(_event=None):
-            self.presets_canvas.bind_all("<MouseWheel>", _on_mousewheel)
-            self.presets_canvas.bind_all("<Button-4>", _on_mousewheel)
-            self.presets_canvas.bind_all("<Button-5>", _on_mousewheel)
-
-        def _unbind_mousewheel(_event=None):
-            self.presets_canvas.unbind_all("<MouseWheel>")
-            self.presets_canvas.unbind_all("<Button-4>")
-            self.presets_canvas.unbind_all("<Button-5>")
-
-        self.presets_canvas.bind("<Enter>", _bind_mousewheel)
-        self.presets_canvas.bind("<Leave>", _unbind_mousewheel)
-        self.presets_scrollable_frame.bind("<Enter>", _bind_mousewheel)
-        self.presets_scrollable_frame.bind("<Leave>", _unbind_mousewheel)
-        
-        # Playlist section
-        playlist_frame = ttk.LabelFrame(control_frame, text="🎵 Playlist - Auto Switch Presets", padding="10")
-        playlist_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(10, 10))
-        
-        # Playlist controls
-        playlist_control_frame = ttk.Frame(playlist_frame)
-        playlist_control_frame.pack(fill=tk.X, pady=(0, 5))
-        
-        ttk.Button(playlist_control_frame, text="▶️ Play", 
-                  command=self.play_playlist, width=10).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(playlist_control_frame, text="⏸️ Pause", 
-                  command=self.pause_playlist, width=10).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(playlist_control_frame, text="⏹️ Stop", 
-                  command=self.stop_playlist, width=10).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(playlist_control_frame, text="✏️ Edit Playlist", 
-                  command=self.edit_playlist, width=15).pack(side=tk.LEFT, padx=(10, 0))
-        
-        # Playlist management buttons (second row)
-        playlist_manage_frame = ttk.Frame(playlist_frame)
-        playlist_manage_frame.pack(fill=tk.X, pady=(5, 0))
-        
-        ttk.Button(playlist_manage_frame, text="💾 Save Playlist As...", 
-                  command=self.save_playlist, width=18).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(playlist_manage_frame, text="📂 Load Playlist", 
-                  command=self.load_playlist_dialog, width=18).pack(side=tk.LEFT, padx=(0, 5))
-        
-        # Current playlist name
-        self.current_playlist_name_var = tk.StringVar(value="(Unsaved playlist)")
-        ttk.Label(playlist_manage_frame, textvariable=self.current_playlist_name_var, 
-                 font=('TkDefaultFont', 8, 'italic'), foreground='gray').pack(side=tk.LEFT, padx=(10, 0))
-        
-        # Playlist status
-        self.playlist_status_var = tk.StringVar(value="Playlist: Not running")
-        ttk.Label(playlist_control_frame, textvariable=self.playlist_status_var, 
-                 font=('TkDefaultFont', 9, 'italic')).pack(side=tk.LEFT, padx=(20, 0))
-        
-        # Action buttons
-        action_frame = ttk.Frame(control_frame)
-        action_frame.grid(row=3, column=0, pady=(10, 0))
-        
-        ttk.Button(action_frame, text="➕ Save Current as Preset", 
-                  command=self.save_current_preset).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(action_frame, text="📁 Import Presets", 
-                  command=self.import_presets).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(action_frame, text="💾 Export Presets", 
-                  command=self.export_presets).pack(side=tk.LEFT)
-        
-        # Initialize playlist state
-        self.playlist = []
-        self.current_playlist_file = None  # Track current playlist file
-        self.playlist_running = False
-        self.playlist_paused = False
-        self.playlist_index = 0
-        self.playlist_timer = None
-        
-        # Render preset buttons
-        self.refresh_preset_buttons()
-        
-    def create_text_tab(self):
-        """Create the text control tab"""
-        text_frame = ttk.Frame(self.notebook, padding="10")
-        self.notebook.add(text_frame, text="Text")
-        
-        text_frame.columnconfigure(1, weight=1)
-        text_frame.rowconfigure(1, weight=1)
-        
-        # Text input
-        ttk.Label(text_frame, text="Text:").grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
-        
-        self.text_input = tk.Text(text_frame, height=5, width=40)
-        self.text_input.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
-        
-        # Text color
-        ttk.Label(text_frame, text="Text Color:").grid(row=2, column=0, sticky=tk.W, pady=(0, 5))
-        
-        color_frame = ttk.Frame(text_frame)
-        color_frame.grid(row=2, column=1, sticky=tk.W, pady=(0, 5))
-        
-        self.text_color = "#FFFFFF"
-        self.text_color_canvas = tk.Canvas(color_frame, width=30, height=20, bg=self.text_color, relief=tk.SUNKEN)
-        self.text_color_canvas.pack(side=tk.LEFT, padx=(0, 5))
-        
-        ttk.Button(color_frame, text="Choose", command=self.choose_text_color).pack(side=tk.LEFT)
-        
-        # Background color
-        ttk.Label(text_frame, text="Background:").grid(row=3, column=0, sticky=tk.W, pady=(0, 5))
-        
-        bg_frame = ttk.Frame(text_frame)
-        bg_frame.grid(row=3, column=1, sticky=tk.W, pady=(0, 10))
-        
-        self.bg_color = "#FFFFFF"
-        self.bg_color_canvas = tk.Canvas(bg_frame, width=30, height=20, bg=self.bg_color, relief=tk.SUNKEN)
-        self.bg_color_canvas.pack(side=tk.LEFT, padx=(0, 5))
-        
-        ttk.Button(bg_frame, text="Choose", command=self.choose_bg_color).pack(side=tk.LEFT)
-        
-        # Animation
-        ttk.Label(text_frame, text="Animation:").grid(row=4, column=0, sticky=tk.W, pady=(0, 5))
-        
-        self.animation_var = tk.IntVar(value=0)
-        animation_frame = ttk.Frame(text_frame)
-        animation_frame.grid(row=4, column=1, sticky=tk.W, pady=(0, 5))
-        
-        animations = [
-            ("Static", 0),
-            ("Scroll Left", 1),
-            ("Scroll Right", 2),
-            ("Flash", 5),
-        ]
-        for text, value in animations:
-            ttk.Radiobutton(animation_frame, text=text, variable=self.animation_var, value=value).pack(side=tk.LEFT, padx=(0, 5))
-        
-        # Speed (for animations)
-        ttk.Label(text_frame, text="Speed:").grid(row=5, column=0, sticky=tk.W, pady=(0, 5))
-        
-        self.speed_var = tk.IntVar(value=50)
-        speed_frame = ttk.Frame(text_frame)
-        speed_frame.grid(row=5, column=1, sticky=tk.W, pady=(0, 5))
-        
-        ttk.Scale(speed_frame, from_=10, to=100, variable=self.speed_var, orient=tk.HORIZONTAL, length=200).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Label(speed_frame, textvariable=self.speed_var).pack(side=tk.LEFT)
-        
-        # Rainbow mode (animated color effects)
-        ttk.Label(text_frame, text="Rainbow Effect:").grid(row=6, column=0, sticky=tk.W, pady=(0, 5))
-        
-        self.rainbow_var = tk.IntVar(value=0)
-        rainbow_frame = ttk.Frame(text_frame)
-        rainbow_frame.grid(row=6, column=1, sticky=tk.W, pady=(0, 5))
-        
-        rainbow_row1 = ttk.Frame(rainbow_frame)
-        rainbow_row1.pack(anchor=tk.W)
-        rainbow_row2 = ttk.Frame(rainbow_frame)
-        rainbow_row2.pack(anchor=tk.W)
-        
-        rainbow_modes = [
-            ("None", 0),
-            ("Mode 1", 1),
-            ("Mode 2", 2),
-            ("Mode 3", 3),
-            ("Mode 4", 4),
-            ("Mode 5", 5),
-            ("Mode 6", 6),
-            ("Mode 7", 7),
-            ("Mode 8", 8),
-            ("Mode 9", 9),
-        ]
-        for i, (text, value) in enumerate(rainbow_modes):
-            parent = rainbow_row1 if i < 5 else rainbow_row2
-            ttk.Radiobutton(parent, text=text, variable=self.rainbow_var, value=value).pack(side=tk.LEFT, padx=(0, 5))
-        
-        ttk.Label(text_frame, text="(Different rainbow modes create various color effects)", 
-                 font=('TkDefaultFont', 8, 'italic')).grid(row=8, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
-
-        # Sprite font (custom text)
-        sprite_frame = ttk.LabelFrame(text_frame, text="Sprite Font", padding="8")
-        sprite_frame.grid(row=9, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
-        sprite_frame.columnconfigure(1, weight=1)
-
-        self.text_use_sprite_var = tk.BooleanVar(value=self.settings.get('text_use_sprite_font', False))
-        ttk.Checkbutton(
-            sprite_frame,
-            text="Use sprite font",
-            variable=self.text_use_sprite_var,
-            command=self.update_text_sprite_settings
-        ).grid(row=0, column=0, sticky=tk.W)
-
-        ttk.Label(sprite_frame, text="Font:").grid(row=1, column=0, sticky=tk.W, pady=(5, 0))
-        self.text_sprite_font_var = tk.StringVar(value=self.settings.get('text_sprite_font_name', ''))
-        self.text_sprite_font_combo = ttk.Combobox(sprite_frame, textvariable=self.text_sprite_font_var, state="readonly")
-        self.text_sprite_font_combo.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(5, 0), pady=(5, 0))
-        self.text_sprite_font_combo.bind('<<ComboboxSelected>>', lambda e: self.update_text_sprite_settings())
-
-        ttk.Label(sprite_frame, text="Note: Sprite font ignores animation/rainbow.", foreground="gray").grid(
-            row=2, column=0, columnspan=2, sticky=tk.W, pady=(2, 0)
-        )
-
-        ttk.Label(text_frame, text="Static delay (s):").grid(row=10, column=0, sticky=tk.W, pady=(0, 5))
-        self.text_static_delay_var = tk.IntVar(value=self.settings.get('text_static_delay_seconds', 2))
-        ttk.Spinbox(text_frame, from_=1, to=30, textvariable=self.text_static_delay_var, width=5,
-                    command=self.update_text_sprite_settings).grid(row=10, column=1, sticky=tk.W, pady=(0, 5))
-        
-        # Send button
-        self.send_text_btn = ttk.Button(text_frame, text="Send Text", command=self.send_text, state=tk.DISABLED)
-        self.send_text_btn.grid(row=11, column=0, columnspan=2, pady=(10, 0))
         
     def create_image_tab(self):
         """Create the image control tab"""
@@ -955,36 +798,16 @@ class iPixelController:
         
         def fetch_task():
             try:
-                import yfinance as yf
-                stock = yf.Ticker(ticker)
-                info = stock.info
-                
-                # Get current price and change
-                current_price = info.get('currentPrice') or info.get('regularMarketPrice')
-                previous_close = info.get('previousClose') or info.get('regularMarketPreviousClose')
-                
-                if current_price is None:
-                    self.root.after(0, lambda: self.stock_info_label.config(
-                        text=f"Could not fetch data for {ticker}. Check ticker symbol.", 
-                        foreground="red"))
-                    return
-                
-                change = current_price - previous_close if previous_close else 0
-                change_percent = (change / previous_close * 100) if previous_close else 0
-                
-                stock_name = info.get('shortName', ticker)
-                
-                self.current_stock_data = {
-                    'ticker': ticker,
-                    'name': stock_name,
-                    'price': current_price,
-                    'change': change,
-                    'change_percent': change_percent,
-                    'previous_close': previous_close
-                }
+                data = self.stock_client.get_stock_data(ticker)
+                self.current_stock_data = data
                 
                 # Update UI
                 def update_ui():
+                    change = data['change']
+                    change_percent = data['change_percent']
+                    stock_name = data['name']
+                    current_price = data['price']
+                    
                     change_symbol = "▲" if change >= 0 else "▼"
                     change_color = "green" if change >= 0 else "red"
                     
@@ -997,10 +820,6 @@ class iPixelController:
                 
                 self.root.after(0, update_ui)
                 
-            except ImportError:
-                self.root.after(0, lambda: messagebox.showerror(
-                    "Missing Library", 
-                    "yfinance library not installed.\n\nInstall with: pip install yfinance"))
             except Exception as e:
                 error_msg = str(e)
                 self.root.after(0, lambda: self.stock_info_label.config(
@@ -1614,66 +1433,24 @@ class iPixelController:
         if not channel_input:
             messagebox.showwarning("No Channel", "Please enter a channel ID or handle")
             return
+            
+        # Initialize or update client if needed
+        if self.youtube_client is None or self.youtube_client.api_key != api_key:
+            self.youtube_client = YouTubeAPI(api_key)
         
         self.youtube_info_label.config(text=f"Fetching data for {channel_input}...", foreground="blue")
         
         def fetch_task():
             try:
-                from googleapiclient.discovery import build
-                
-                youtube = build('youtube', 'v3', developerKey=api_key)
-                
-                # Handle both @handle and channel ID formats
-                if channel_input.startswith('@'):
-                    # Search for channel by handle
-                    search_response = youtube.search().list(
-                        q=channel_input,
-                        type='channel',
-                        part='id',
-                        maxResults=1
-                    ).execute()
-                    
-                    if not search_response.get('items'):
-                        self.root.after(0, lambda: self.youtube_info_label.config(
-                            text=f"Channel not found: {channel_input}", foreground="red"))
-                        return
-                    
-                    channel_id = search_response['items'][0]['id']['channelId']
-                else:
-                    channel_id = channel_input
-                
-                # Get channel statistics
-                channel_response = youtube.channels().list(
-                    part='statistics,snippet',
-                    id=channel_id
-                ).execute()
-                
-                if not channel_response.get('items'):
-                    self.root.after(0, lambda: self.youtube_info_label.config(
-                        text=f"Channel not found: {channel_input}", foreground="red"))
-                    return
-                
-                channel_data = channel_response['items'][0]
-                stats = channel_data['statistics']
-                snippet = channel_data['snippet']
-                
-                channel_title = snippet['title']
-                subscribers = int(stats.get('subscriberCount', 0))
-                views = int(stats.get('viewCount', 0))
-                videos = int(stats.get('videoCount', 0))
-                
-                # Latest video lookup removed (single YouTube format)
-                latest_video_views = 0
-                
-                self.current_youtube_data = {
-                    'channel_title': channel_title,
-                    'subscribers': subscribers,
-                    'views': views,
-                    'videos': videos,
-                    'latest_video_views': latest_video_views
-                }
+                data = self.youtube_client.get_channel_stats(channel_input)
+                self.current_youtube_data = data
                 
                 def update_ui():
+                    channel_title = data['channel_title']
+                    subscribers = data['subscribers']
+                    views = data['views']
+                    videos = data['videos']
+                    
                     info_text = f"{channel_title}\n"
                     info_text += f"Subscribers: {subscribers:,}\n"
                     info_text += f"Total Views: {views:,}\n"
@@ -1684,14 +1461,12 @@ class iPixelController:
                 
                 self.root.after(0, update_ui)
                 
-            except ImportError:
-                self.root.after(0, lambda: messagebox.showerror(
-                    "Missing Library", 
-                    "Google API library not installed.\n\nInstall with: pip install google-api-python-client"))
             except Exception as e:
                 error_msg = str(e)
                 self.root.after(0, lambda: self.youtube_info_label.config(
                     text=f"Error: {error_msg}", foreground="red"))
+                if "Google API library not installed" in error_msg:
+                    self.root.after(0, lambda: messagebox.showerror("Missing Library", error_msg))
         
         threading.Thread(target=fetch_task, daemon=True).start()
     
@@ -1950,6 +1725,7 @@ class iPixelController:
         """Fetch current weather data"""
         location = self.weather_location_var.get().strip()
         api_key = self.weather_api_key_var.get().strip()
+        unit = self.weather_unit_var.get()
         
         if not api_key:
             messagebox.showwarning("No API Key", "Please enter your OpenWeatherMap API key first")
@@ -1958,50 +1734,29 @@ class iPixelController:
         if not location:
             messagebox.showwarning("No Location", "Please enter a location")
             return
+            
+        # Initialize or update client if needed
+        if self.weather_client is None or self.weather_client.api_key != api_key:
+            self.weather_client = WeatherAPI(api_key)
         
         self.weather_info_label.config(text=f"Fetching weather for {location}...", foreground="blue")
         
         def fetch_task():
             try:
-                import requests
-                
-                unit = self.weather_unit_var.get()
-                url = f"https://api.openweathermap.org/data/2.5/weather?q={location}&appid={api_key}&units={unit}"
-                
-                response = requests.get(url, timeout=10)
-                
-                if response.status_code != 200:
-                    self.root.after(0, lambda: self.weather_info_label.config(
-                        text=f"Error: {response.json().get('message', 'Unknown error')}", foreground="red"))
-                    return
-                
-                data = response.json()
-                
-                temp = data['main']['temp']
-                feels_like = data['main']['feels_like']
-                condition = data['weather'][0]['main']
-                description = data['weather'][0]['description']
-                humidity = data['main']['humidity']
-                wind_speed = data['wind']['speed']
-                city_name = data['name']
-                
-                unit_symbol = "°C" if unit == "metric" else "°F"
-                
-                self.current_weather_data = {
-                    'city': city_name,
-                    'temp': temp,
-                    'feels_like': feels_like,
-                    'condition': condition,
-                    'description': description,
-                    'humidity': humidity,
-                    'wind_speed': wind_speed,
-                    'unit': unit_symbol
-                }
+                data = self.weather_client.get_weather(location, unit)
+                self.current_weather_data = data
                 
                 def update_ui():
+                    city_name = data['city']
+                    temp = data['temp']
+                    feels_like = data['feels_like']
+                    description = data['description']
+                    humidity = data['humidity']
+                    unit_symbol = data['unit']
+                    
                     info_text = f"{city_name}\n"
-                    info_text += f"Temperature: {temp:.1f}°{unit_symbol}\n"
-                    info_text += f"Feels like: {feels_like:.1f}°{unit_symbol}\n"
+                    info_text += f"Temperature: {temp:.1f}{unit_symbol}\n"
+                    info_text += f"Feels like: {feels_like:.1f}{unit_symbol}\n"
                     info_text += f"Condition: {description.title()}\n"
                     info_text += f"Humidity: {humidity}%"
                     
@@ -2010,10 +1765,6 @@ class iPixelController:
                 
                 self.root.after(0, update_ui)
                 
-            except ImportError:
-                self.root.after(0, lambda: messagebox.showerror(
-                    "Missing Library", 
-                    "requests library not installed.\n\nInstall with: pip install requests"))
             except Exception as e:
                 error_msg = str(e)
                 self.root.after(0, lambda: self.weather_info_label.config(
@@ -2438,7 +2189,7 @@ class iPixelController:
                   command=self.signout_teams).grid(row=1, column=1)
         
         # Status mapping section
-        mapping_frame = ttk.LabelFrame(teams_frame, text="📋 Status → Preset Mapping", padding="10")
+        mapping_frame = ttk.LabelFrame(teams_frame, text="📋 Status -> Preset Mapping", padding="10")
         mapping_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
         # Get preset names for dropdown
@@ -2636,88 +2387,56 @@ class iPixelController:
         """Check current Teams status via Microsoft Graph API"""
         if not self.teams_monitoring:
             return
-        
+            
         def fetch_status():
             try:
                 user_id = self.secrets.get('teams_user_id', '').strip()
+                tenant_id = self.secrets.get('teams_tenant_id')
+                client_id = self.secrets.get('teams_client_id')
+                client_secret = self.secrets.get('teams_client_secret')
+                
                 if not user_id:
                     self.root.after(0, lambda: messagebox.showwarning(
                         "Missing User", "Please provide a Teams User ID or UPN in the Teams settings."
                     ))
                     self.root.after(0, self.stop_teams_monitoring)
                     return
-
-                user_id_encoded = urllib.parse.quote(user_id, safe="")
+                
+                # Initialize or update client if needed
+                if (self.teams_client is None or 
+                    self.teams_client.tenant_id != tenant_id or 
+                    self.teams_client.client_id != client_id or 
+                    self.teams_client.client_secret != client_secret):
+                    self.teams_client = TeamsAPI(tenant_id, client_id, client_secret)
+                
                 self.root.after(0, lambda: self.teams_debug_var.set("Debug: checking presence..."))
-
-                # Get access token if needed
-                if not self.teams_access_token:
-                    token_response = self.get_teams_access_token()
-                    if not token_response:
-                        err = self.teams_last_error or "Authentication failed"
-                        self.root.after(0, lambda e=err: self.teams_current_status_var.set(f"Error: {e}"))
-                        self.root.after(0, lambda: messagebox.showerror(
-                            "Authentication Failed", 
-                            "Could not authenticate with Microsoft Graph API. Check your credentials."
-                        ))
-                        self.root.after(0, self.stop_teams_monitoring)
-                        return
-                    self.teams_access_token = token_response
                 
-                # Get user presence
-                headers = {
-                    'Authorization': f'Bearer {self.teams_access_token}',
-                    'Content-Type': 'application/json'
-                }
+                # Use TeamsAPI to fetch presence
+                data = self.teams_client.get_user_presence(user_id)
+                availability = data.get('availability', 'Unknown')
+                activity = data.get('activity', 'Unknown')
                 
-                # Use Graph API to get presence
-                response = requests.get(
-                    f'https://graph.microsoft.com/v1.0/users/{user_id_encoded}/presence',
-                    headers=headers,
-                    timeout=10
-                )
+                self.teams_last_error = None
+                self.root.after(0, lambda: self.teams_debug_var.set("Debug: presence OK"))
                 
-                if response.status_code == 401:
-                    # Token expired, refresh it
-                    self.teams_access_token = None
-                    self.root.after(0, self.check_teams_status)
-                    return
+                status_display = availability if availability and availability != 'Unknown' else activity
+                status_display = status_display if status_display else 'Unknown'
                 
-                if response.status_code == 200:
-                    data = response.json()
-                    availability = data.get('availability', 'Unknown')
-                    activity = data.get('activity', 'Unknown')
-                    self.teams_last_error = None
-                    self.root.after(0, lambda: self.teams_debug_var.set("Debug: presence OK"))
-
-                    status_display = availability if availability and availability != 'Unknown' else activity
-                    status_display = status_display if status_display else 'Unknown'
-                    
-                    # Update UI with current status
-                    self.root.after(0, lambda s=status_display, a=activity: self.teams_current_status_var.set(
-                        f"{s} ({a})"
-                    ))
-                    
-                    # Check if status changed
-                    status_key = availability
-                    if not status_key or status_key == 'Unknown':
-                        status_key = activity
-
-                    if status_key != self.teams_last_status:
-                        self.teams_last_status = status_key
-                        self.root.after(0, lambda s=status_key: self.handle_teams_status_change(s))
-                else:
-                    error_summary = f"{response.status_code} {response.reason}" if hasattr(response, 'reason') else f"{response.status_code}"
-                    self.teams_last_error = f"Presence error: {error_summary}"
-                    self.root.after(0, lambda e=self.teams_last_error: self.teams_current_status_var.set(f"Error: {e}"))
-                    self.root.after(0, lambda e=self.teams_last_error: self.teams_debug_var.set(f"Debug: {e}"))
-                    print(f"Teams API error: {response.status_code} - {response.text}")
+                # Update UI with current status
+                self.root.after(0, lambda s=status_display, a=activity: self.teams_current_status_var.set(
+                    f"{s} ({a})"
+                ))
+                
+                # Check if status changed
+                status_key = availability if availability and availability != 'Unknown' else activity
+                if status_key != self.teams_last_status:
+                    self.teams_last_status = status_key
+                    self.root.after(0, lambda s=status_key: self.handle_teams_status_change(s))
                     
             except Exception as e:
                 self.teams_last_error = f"Presence error: {e}"
                 self.root.after(0, lambda e=self.teams_last_error: self.teams_current_status_var.set(f"Error: {e}"))
                 self.root.after(0, lambda e=self.teams_last_error: self.teams_debug_var.set(f"Debug: {e}"))
-                print(f"Error checking Teams status: {e}")
         
         # Run in background thread
         threading.Thread(target=fetch_status, daemon=True).start()
@@ -2727,40 +2446,22 @@ class iPixelController:
         self.teams_timer = self.root.after(interval, self.check_teams_status)
     
     def get_teams_access_token(self):
-        """Get access token from Microsoft Graph API"""
+        """Get access token from Microsoft Graph API (Delegated to TeamsAPI)"""
         try:
-            import requests
-            
             tenant_id = self.secrets.get('teams_tenant_id')
             client_id = self.secrets.get('teams_client_id')
             client_secret = self.secrets.get('teams_client_secret')
             
-            # Using client credentials flow (requires admin consent)
-            token_url = f'https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token'
-            
-            data = {
-                'grant_type': 'client_credentials',
-                'client_id': client_id,
-                'client_secret': client_secret,
-                'scope': 'https://graph.microsoft.com/.default'
-            }
-            
-            response = requests.post(token_url, data=data, timeout=10)
-            
-            if response.status_code == 200:
-                self.teams_last_error = None
-                self.root.after(0, lambda: self.teams_debug_var.set("Debug: token OK"))
-                return response.json()['access_token']
-            else:
-                self.teams_last_error = f"Token error: {response.status_code}"
-                self.root.after(0, lambda e=self.teams_last_error: self.teams_debug_var.set(f"Debug: {e}"))
-                print(f"Token error: {response.status_code} - {response.text}")
-                return None
+            if self.teams_client is None:
+                self.teams_client = TeamsAPI(tenant_id, client_id, client_secret)
+                
+            token = self.teams_client.get_access_token()
+            self.teams_last_error = None
+            return token
                 
         except Exception as e:
             self.teams_last_error = f"Token error: {e}"
-            self.root.after(0, lambda e=self.teams_last_error: self.teams_debug_var.set(f"Debug: {e}"))
-            print(f"Error getting access token: {e}")
+            logger.error(f"Error getting Teams access token: {e}")
             return None
     
     def handle_teams_status_change(self, status):
@@ -2794,38 +2495,111 @@ class iPixelController:
     def create_settings_tab(self):
         """Create the settings control tab"""
         settings_frame = ttk.Frame(self.notebook, padding="10")
-        self.notebook.add(settings_frame, text="Settings")
+        self.notebook.add(settings_frame, text="⚙️ Settings")
 
         settings_frame.columnconfigure(1, weight=1)
         
+        # NEW: App Appearance Section
+        appearance_frame = ttk.LabelFrame(settings_frame, text="🎨 Appearance", padding="10")
+        appearance_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Label(appearance_frame, text="Theme:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+        
+        self.current_theme_var = tk.StringVar(value=self.settings.get('theme', 'light'))
+       
+        theme_btn_frame = ttk.Frame(appearance_frame)
+        theme_btn_frame.grid(row=0, column=1, sticky=tk.W)
+        
+        ttk.Radiobutton(theme_btn_frame, text="☀️ Light Mode", 
+                       variable=self.current_theme_var, value='light',
+                       command=self.apply_theme).pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(theme_btn_frame, text="🌙 Dark Mode", 
+                       variable=self.current_theme_var, value='dark',
+                       command=self.apply_theme).pack(side=tk.LEFT, padx=5)
+        
+        self.theme_status_label = ttk.Label(appearance_frame, 
+                                           text="(Restart required for full effect)",
+                                           font=('TkDefaultFont', 8, 'italic'),
+                                           foreground='gray')
+        self.theme_status_label.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+        
+        # NEW: Connection Settings
+        conn_frame = ttk.LabelFrame(settings_frame, text="🔌 Connection", padding="10")
+        conn_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        self.auto_connect_var = tk.BooleanVar(value=self.settings.get('auto_connect', True))
+        ttk.Checkbutton(conn_frame, text="Auto-connect to last device on startup",
+                       variable=self.auto_connect_var,
+                       command=self.save_connection_settings).grid(row=0, column=0, sticky=tk.W, pady=2)
+        
+        self.restore_state_var = tk.BooleanVar(value=self.settings.get('restore_last_state', True))
+        ttk.Checkbutton(conn_frame, text="Restore last display state after reconnecting",
+                       variable=self.restore_state_var,
+                       command=self.save_connection_settings).grid(row=1, column=0, sticky=tk.W, pady=2)
+        
+        # NEW: Auto-reconnect setting
+        self.auto_reconnect_var = tk.BooleanVar(value=self.settings.get('auto_reconnect_enabled', True))
+        ttk.Checkbutton(conn_frame, text="Auto-reconnect on connection loss",
+                       variable=self.auto_reconnect_var,
+                       command=self.save_connection_settings).grid(row=2, column=0, sticky=tk.W, pady=2)
+        
+        # Max reconnect attempts
+        reconnect_attempts_frame = ttk.Frame(conn_frame)
+        reconnect_attempts_frame.grid(row=3, column=0, sticky=tk.W, pady=(2, 5))
+        
+        ttk.Label(reconnect_attempts_frame, text="Max reconnect attempts:").pack(side=tk.LEFT, padx=(20, 5))
+        
+        self.max_reconnect_attempts_var = tk.IntVar(value=self.settings.get('max_reconnect_attempts', 5))
+        ttk.Spinbox(reconnect_attempts_frame, from_=1, to=10, 
+                   textvariable=self.max_reconnect_attempts_var, width=5,
+                   command=self.save_connection_settings).pack(side=tk.LEFT)
+        
+        # NEW: Debug Settings
+        debug_frame = ttk.LabelFrame(settings_frame, text="🐛 Debug", padding="10")
+        debug_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        self.debug_mode_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(debug_frame, text="Enable verbose logging (debug mode)",
+                       variable=self.debug_mode_var,
+                       command=self.toggle_debug_mode).grid(row=0, column=0, sticky=tk.W, pady=2)
+        
+        ttk.Label(debug_frame, text="Logs saved to: logs/ipixel_controller.log",
+                 font=('TkDefaultFont', 8, 'italic'),
+                 foreground='gray').grid(row=1, column=0, sticky=tk.W)
+        
+        # Display Settings
+        display_frame = ttk.LabelFrame(settings_frame, text="🖥️ Display", padding="10")
+        display_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        display_frame.columnconfigure(1, weight=1)
+        
         # Brightness
-        ttk.Label(settings_frame, text="Brightness:").grid(row=0, column=0, sticky=tk.W, pady=(0, 10))
+        ttk.Label(display_frame, text="Brightness:").grid(row=0, column=0, sticky=tk.W, pady=(0, 10))
         
         self.brightness_var = tk.IntVar(value=50)
-        brightness_frame = ttk.Frame(settings_frame)
+        brightness_frame = ttk.Frame(display_frame)
         brightness_frame.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=(0, 10))
         
         ttk.Scale(brightness_frame, from_=1, to=100, variable=self.brightness_var, orient=tk.HORIZONTAL, length=300).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Label(brightness_frame, textvariable=self.brightness_var).pack(side=tk.LEFT)
         
-        self.set_brightness_btn = ttk.Button(settings_frame, text="Set Brightness", command=self.set_brightness, state=tk.DISABLED)
-        self.set_brightness_btn.grid(row=1, column=0, columnspan=2, pady=(0, 20))
+        self.set_brightness_btn = ttk.Button(display_frame, text="Set Brightness", command=self.set_brightness, state=tk.DISABLED)
+        self.set_brightness_btn.grid(row=1, column=0, columnspan=2, pady=(0, 10))
 
         # Power control
-        ttk.Label(settings_frame, text="Power Control:").grid(row=2, column=0, sticky=tk.W, pady=(0, 10))
+        ttk.Label(display_frame, text="Power Control:").grid(row=2, column=0, sticky=tk.W, pady=(0, 10))
         
-        power_frame = ttk.Frame(settings_frame)
+        power_frame = ttk.Frame(display_frame)
         power_frame.grid(row=2, column=1, sticky=tk.W, pady=(0, 10))
         
-        self.power_on_btn = ttk.Button(power_frame, text="Power ON", command=lambda: self.set_power(True), state=tk.DISABLED)
+        self.power_on_btn = ttk.Button(power_frame, text="⚡ Power ON", command=lambda: self.set_power(True), state=tk.DISABLED)
         self.power_on_btn.pack(side=tk.LEFT, padx=(0, 5))
         
-        self.power_off_btn = ttk.Button(power_frame, text="Power OFF", command=lambda: self.set_power(False), state=tk.DISABLED)
+        self.power_off_btn = ttk.Button(power_frame, text="⏻ Power OFF", command=lambda: self.set_power(False), state=tk.DISABLED)
         self.power_off_btn.pack(side=tk.LEFT)
 
         # Sprite font library
         sprite_frame = ttk.LabelFrame(settings_frame, text="Sprite Fonts", padding="10")
-        sprite_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
+        sprite_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
         sprite_frame.columnconfigure(1, weight=1)
 
         self.sprite_font_listbox = tk.Listbox(sprite_frame, height=6)
@@ -2865,7 +2639,146 @@ class iPixelController:
 
         self._refresh_sprite_font_listbox()
         self._refresh_sprite_font_dropdowns()
+        logger.info("Settings tab created with theme toggle")
+    
+    def apply_theme(self):
+        """Apply the selected theme"""
+        theme_name = self.current_theme_var.get()
+        get_theme_manager().set_theme(theme_name)
+        self.settings['theme'] = theme_name
+        self.save_settings()
         
+        logger.info(f"Theme changed to: {theme_name}")
+        
+        # Show confirmation message
+        self.theme_status_label.config(
+            text="✓ Theme saved! Restart app for full effect",
+            foreground='green'
+        )
+        self.root.after(3000, lambda: self.theme_status_label.config(
+            text="(Restart required for full effect)",
+            foreground='gray'
+        ))
+    
+    def save_connection_settings(self):
+        """Save connection preferences"""
+        self.settings['auto_connect'] = self.auto_connect_var.get()
+        self.settings['restore_last_state'] = self.restore_state_var.get()
+        self.settings['auto_reconnect_enabled'] = self.auto_reconnect_var.get()
+        self.settings['max_reconnect_attempts'] = self.max_reconnect_attempts_var.get()
+        self.save_settings()
+        
+        # Update connection manager settings
+        self.connection_manager.auto_reconnect_enabled = self.auto_reconnect_var.get()
+        self.connection_manager.max_reconnect_attempts = self.max_reconnect_attempts_var.get()
+        
+        logger.info(f"Connection settings saved - Auto-reconnect: {self.auto_reconnect_var.get()}")
+    
+    def toggle_debug_mode(self):
+        """Toggle debug logging mode"""
+        debug_enabled = self.debug_mode_var.get()
+        set_debug_mode(debug_enabled)
+        logger.info(f"Debug mode: {'enabled' if debug_enabled else 'disabled'}")
+    
+    def on_connection_state_change(self, state: ConnectionState):
+        """Callback when connection state changes"""
+        logger.info(f"Connection state changed to: {state.value}")
+        
+        # Update UI on main thread
+        self.root.after(0, lambda: self._update_connection_status(state))
+    
+    def on_reconnect_attempt(self, attempt: int):
+        """Callback when reconnection attempt starts"""
+        logger.info(f"Reconnection attempt {attempt}")
+        
+        # Update status label
+        self.root.after(0, lambda: self.status_label.config(
+            text=f"Reconnecting... (attempt {attempt}/{self.connection_manager.max_reconnect_attempts})",
+            foreground="orange"
+        ))
+    
+    def _update_connection_status(self, state: ConnectionState):
+        """Update connection status UI based on state"""
+        if state == ConnectionState.CONNECTED:
+            self.status_label.config(text="Connected", foreground="green")
+            self.is_connected = True
+            self.enable_controls()
+        elif state == ConnectionState.CONNECTING:
+            self.status_label.config(text="Connecting...", foreground="orange")
+        elif state == ConnectionState.RECONNECTING:
+            self.status_label.config(text="Reconnecting...", foreground="orange")
+        elif state == ConnectionState.FAILED:
+            self.status_label.config(text="Connection failed", foreground="red")
+            self.is_connected = False
+            self.disable_controls()
+        elif state == ConnectionState.DISCONNECTED:
+            self.status_label.config(text="Not connected", foreground="red")
+            self.is_connected = False
+            self.disable_controls()
+
+    def auto_connect_to_last_device(self):
+        """Automatically connect to the last used device on startup"""
+        last_device = self.settings.get('last_device')
+        if not last_device:
+            logger.info("Auto-connect: No last device found in settings")
+            return
+            
+        logger.info(f"Auto-connect: Attempting to find last device {last_device}")
+        self.status_label.config(text=f"Auto-connecting to {last_device}...", foreground="orange")
+        
+        async def find_and_connect():
+            try:
+                # Scan briefly to see if device is available
+                devices = await BleakScanner.discover(timeout=3.0)
+                found = False
+                for d in devices:
+                    if d.address == last_device:
+                        found = True
+                        logger.info(f"Auto-connect: Found device {last_device}")
+                        break
+                
+                if found:
+                    self.device_address = last_device
+                    self.connection_manager.device_address = last_device
+                    self.root.after(0, self.connect_device_with_address, last_device)
+                else:
+                    logger.warning(f"Auto-connect: Device {last_device} not found in scan")
+                    self.root.after(0, lambda: self.status_label.config(text="Auto-connect: Device not found", foreground="red"))
+            except Exception as e:
+                logger.error(f"Auto-connect error: {e}")
+        
+        self.run_async_background(find_and_connect())
+
+    def connect_device_with_address(self, address):
+        """Connect to a specific device address (used by auto-connect)"""
+        self.device_address = address
+        self.connection_manager.device_address = address
+        self.connection_manager.set_state(ConnectionState.CONNECTING)
+        
+        def connect_task():
+            try:
+                self.client = Client(address)
+                if hasattr(self.client, 'connect') and callable(self.client.connect):
+                    self.client.connect()
+                self.root.after(0, self._on_connected)
+            except Exception as e:
+                self.root.after(0, lambda: self._on_connection_error(str(e)))
+        
+        threading.Thread(target=connect_task, daemon=True).start()
+
+    def restore_last_state(self):
+        """Restore the application to its last used state"""
+        last_tab = self.settings.get('last_tab_index', 0)
+        logger.info(f"Restoring last state: tab index {last_tab}")
+        try:
+            self.switch_to_tab(last_tab)
+        except:
+            pass
+            
+    def run_async_background(self, coro):
+        """Run a coroutine in the event loop without blocking"""
+        if self.loop:
+            asyncio.run_coroutine_threadsafe(coro, self.loop)
     def start_event_loop(self):
         """Start asyncio event loop in a separate thread"""
         def run_loop():
@@ -2889,7 +2802,8 @@ class iPixelController:
         
         def scan_task():
             try:
-                devices = self.run_async(self._scan_devices())
+                # Use ConnectionManager to scan
+                devices = self.run_async(self.connection_manager.scan_devices())
                 
                 # Update UI in main thread
                 self.root.after(0, lambda: self._update_device_list(devices))
@@ -2900,16 +2814,6 @@ class iPixelController:
                 self.root.after(0, lambda: self.scan_btn.configure(state=tk.NORMAL, text="Scan"))
         
         threading.Thread(target=scan_task, daemon=True).start()
-    
-    async def _scan_devices(self):
-        """Async method to scan for devices"""
-        devices = await BleakScanner.discover(timeout=5.0)
-        # Filter for LED devices
-        ipixel_devices = {}
-        for device in devices:
-            if device.name and ("LED" in device.name or "BLE" in device.name or "iPixel" in device.name):
-                ipixel_devices[f"{device.name} ({device.address})"] = device.address
-        return ipixel_devices
     
     def _update_device_list(self, devices):
         """Update the device list in the UI"""
@@ -2941,15 +2845,13 @@ class iPixelController:
         
         def connect_task():
             try:
-                # Create client - this may handle connection internally
-                self.client = Client(self.device_address)
-                
-                # Try to connect if method exists and is callable
-                if hasattr(self.client, 'connect') and callable(self.client.connect):
-                    self.client.connect()
-                
-                # Update UI
-                self.root.after(0, self._on_connected)
+                # Use ConnectionManager to connect
+                success = self.run_async(self.connection_manager.connect(self.device_address))
+                if success:
+                    self.client = self.connection_manager.client
+                    self.root.after(0, self._on_connected)
+                else:
+                    self.root.after(0, lambda: self._on_connection_error("Connection failed"))
             except Exception as e:
                 error_msg = str(e)
                 self.root.after(0, lambda: self._on_connection_error(error_msg))
@@ -2959,6 +2861,10 @@ class iPixelController:
     def _on_connected(self):
         """Called when successfully connected"""
         self.is_connected = True
+        self.client = self.connection_manager.client
+        
+        # Start monitoring
+        self.run_async(self.connection_manager.start_monitoring())
         
         # Save device address for auto-connect
         self.settings['last_device'] = self.device_address
@@ -2996,20 +2902,76 @@ class iPixelController:
         self.connect_btn.config(state=tk.NORMAL, text="Connect")
         messagebox.showerror("Connection Error", f"Failed to connect: {error}")
     
+    async def _async_reconnect(self):
+        """Asynchronous reconnection method called by ConnectionManager"""
+        if not self.device_address:
+            return False
+            
+        try:
+            # Create client
+            self.client = Client(self.device_address)
+            
+            # Try to connect
+            if hasattr(self.client, 'connect') and callable(self.client.connect):
+                if asyncio.iscoroutinefunction(self.client.connect):
+                    await self.client.connect()
+                else:
+                    self.client.connect()
+            
+            # Update UI on successful reconnection
+            self.root.after(0, self._on_connected)
+            return True
+        except Exception as e:
+            logger.error(f"Async reconnection attempt failed: {e}")
+            return False
+
     def disconnect_device(self):
         """Disconnect from the device"""
-        if self.client:
+        def disconnect_task():
             try:
-                self.run_async(self.client.disconnect())
-            except:
-                pass
-            
+                self.run_async(self.connection_manager.disconnect())
+                self.root.after(0, self._on_disconnected)
+            except Exception as e:
+                logger.error(f"Disconnection failed: {e}")
+                self.root.after(0, self._on_disconnected) # Ensure UI updates anyway
+                
+        threading.Thread(target=disconnect_task, daemon=True).start()
+        
+    def _on_disconnected(self):
+        """Called when disconnected"""
         self.is_connected = False
         self.client = None
         self.status_label.config(text="Disconnected", foreground="red")
-        self.connect_btn.config(text="Connect")
+        self.connect_btn.config(state=tk.NORMAL, text="Connect")
+        self.disable_controls()
+        logger.info("UI updated for disconnected state")
+        self.client = None
         
-        # Disable control buttons
+        # Use centralized disable logic
+        self._update_connection_status(ConnectionState.DISCONNECTED)
+        self.connect_btn.config(text="Connect")
+
+    def enable_controls(self):
+        """Enable UI controls when connected"""
+        self.send_text_btn.config(state=tk.NORMAL)
+        self.send_image_btn.config(state=tk.NORMAL if self.image_path else tk.DISABLED)
+        self.send_clock_btn.config(state=tk.NORMAL)
+        self.set_brightness_btn.config(state=tk.NORMAL)
+        self.power_on_btn.config(state=tk.NORMAL)
+        self.power_off_btn.config(state=tk.NORMAL)
+        
+        # Enable new feature buttons
+        if hasattr(self, 'send_stock_btn'):
+            self.send_stock_btn.config(state=tk.NORMAL if hasattr(self, 'current_stock_data') and self.current_stock_data else tk.DISABLED)
+        if hasattr(self, 'send_anim_btn'):
+            self.send_anim_btn.config(state=tk.NORMAL)
+        if hasattr(self, 'send_weather_btn'):
+            self.send_weather_btn.config(state=tk.NORMAL)
+        if hasattr(self, 'send_youtube_btn'):
+            self.send_youtube_btn.config(state=tk.NORMAL)
+
+    def disable_controls(self):
+        """Disable UI controls when disconnected"""
         self.send_text_btn.config(state=tk.DISABLED)
         self.send_image_btn.config(state=tk.DISABLED)
         self.send_clock_btn.config(state=tk.DISABLED)
@@ -3802,6 +3764,8 @@ class iPixelController:
         if not self.is_connected:
             messagebox.showwarning("Not Connected", "Connect to device first")
             return
+            
+        self._stop_active_display_tasks()
         
         # Clear last preset to prevent auto-restore from overriding manual clock
         self.settings['last_preset'] = None
@@ -3820,7 +3784,7 @@ class iPixelController:
                         self.run_async(result)
                 except Exception as e:
                     error_msg = str(e)
-                    self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to show clock: {error_msg}"))
+                    self.root.after(0, lambda e=e: messagebox.showerror("Error", f"Failed to show clock: {e}"))
                 finally:
                     self.root.after(0, lambda: self.send_clock_btn.config(state=tk.NORMAL, text="Show Clock"))
             
@@ -3838,16 +3802,8 @@ class iPixelController:
         """Start a live updating custom clock"""
         import time
         
-        # Stop any existing clock
-        self.stop_live_clock()
-        self._stop_sprite_scroll()
-        if self.countdown_static_timer:
-            self.root.after_cancel(self.countdown_static_timer)
-            self.countdown_static_timer = None
-        self._stop_sprite_scroll()
-        
-        # Stop any running stock auto-refresh
-        self.stop_stock_refresh()
+        # Stop any existing display tasks
+        self._stop_active_display_tasks()
         
         self.send_clock_btn.config(state=tk.DISABLED)
         self.stop_clock_btn.config(state=tk.NORMAL)
@@ -3889,7 +3845,7 @@ class iPixelController:
                                         self.run_async(result)
                                     return
                                 except Exception as e:
-                                    self.root.after(0, lambda: self.clock_image_status_var.set(f"Sprite send failed: {e}"))
+                                    self.root.after(0, lambda e=e: self.clock_image_status_var.set(f"Sprite send failed: {e}"))
                             else:
                                 self.root.after(0, lambda: self.clock_image_status_var.set(f"Sprite error: {sprite_err} (fallback to images/text)"))
 
@@ -3912,8 +3868,7 @@ class iPixelController:
                         if asyncio.iscoroutine(result):
                             self.run_async(result)
                     except Exception as e:
-                        error_msg = str(e)
-                        self.root.after(0, lambda: messagebox.showerror("Error", f"Clock update failed: {error_msg}"))
+                        self.root.after(0, lambda e=e: messagebox.showerror("Error", f"Clock update failed: {e}"))
                         self.root.after(0, self.stop_live_clock)
                 
                 threading.Thread(target=send_task, daemon=True).start()
@@ -3986,12 +3941,8 @@ class iPixelController:
         """Start a countdown timer"""
         from datetime import datetime, timedelta
         
-        # Stop any existing clock
-        self.stop_live_clock()
-        self._stop_sprite_scroll()
-        if self.countdown_static_timer:
-            self.root.after_cancel(self.countdown_static_timer)
-            self.countdown_static_timer = None
+        # Stop any existing display tasks
+        self._stop_active_display_tasks()
         
         self.send_clock_btn.config(state=tk.DISABLED)
         self.stop_clock_btn.config(state=tk.NORMAL)
@@ -4257,21 +4208,13 @@ class iPixelController:
     
     def load_presets(self):
         """Load presets from JSON file"""
-        try:
-            if os.path.exists(self.presets_file):
-                with open(self.presets_file, 'r') as f:
-                    self.presets = json.load(f)
-        except Exception as e:
-            print(f"Failed to load presets: {e}")
-            self.presets = []
+        self.preset_manager.load_presets()
+        self.presets = self.preset_manager.presets
     
     def save_presets(self):
         """Save presets to JSON file"""
-        try:
-            with open(self.presets_file, 'w') as f:
-                json.dump(self.presets, f, indent=2)
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to save presets: {e}")
+        if not self.preset_manager.save_presets():
+            messagebox.showerror("Error", "Failed to save presets")
     
     def load_settings(self):
         """Load app settings from JSON file"""
@@ -4341,7 +4284,7 @@ class iPixelController:
                     time.sleep(0.1)
                 
                 # Scan for devices
-                future = asyncio.run_coroutine_threadsafe(self._scan_devices(), self.loop)
+                future = asyncio.run_coroutine_threadsafe(self.connection_manager.scan_devices(), self.loop)
                 devices = future.result(timeout=10)
                 
                 # Check if last device is available
@@ -4394,309 +4337,20 @@ class iPixelController:
     
     def generate_thumbnail(self, image_path, max_size=(64, 16)):
         """Generate a thumbnail from an image file and return as base64 string"""
-        try:
-            image_path = self._resolve_asset_path(image_path)
-            if not os.path.exists(image_path):
-                return None
-            
-            # Open and resize image
-            img = Image.open(image_path)
-            
-            # Handle animated GIFs - get first frame
-            if hasattr(img, 'is_animated') and img.is_animated:
-                img.seek(0)
-            
-            # Convert RGBA to RGB if needed
-            if img.mode == 'RGBA':
-                background = Image.new('RGB', img.size, (0, 0, 0))
-                background.paste(img, mask=img.split()[3])
-                img = background
-            elif img.mode != 'RGB':
-                img = img.convert('RGB')
-            
-            # Crop to fill the thumbnail area (no black borders)
-            img_ratio = img.width / img.height
-            thumb_ratio = max_size[0] / max_size[1]
-            
-            if img_ratio > thumb_ratio:
-                # Image is wider - crop width
-                new_height = max_size[1]
-                new_width = int(new_height * img_ratio)
-                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                left = (new_width - max_size[0]) // 2
-                img = img.crop((left, 0, left + max_size[0], max_size[1]))
-            else:
-                # Image is taller - crop height
-                new_width = max_size[0]
-                new_height = int(new_width / img_ratio)
-                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                top = (new_height - max_size[1]) // 2
-                img = img.crop((0, top, max_size[0], top + max_size[1]))
-            
-            # Convert to base64
-            import base64
-            from io import BytesIO
-            buffer = BytesIO()
-            img.save(buffer, format='PNG')
-            img_str = base64.b64encode(buffer.getvalue()).decode()
-            return img_str
-        except Exception as e:
-            print(f"Failed to generate thumbnail: {e}")
-            return None
+        return self.preset_manager.generate_thumbnail(image_path, max_size)
     
     def get_preset_preview(self, preset):
         """Generate preview text for a preset"""
-        preset_type = preset.get('type', 'unknown')
-        
-        if preset_type == "text":
-            text = preset.get('text', '')
-            return text[:15] if len(text) <= 15 else text[:12] + "..."
-        elif preset_type == "image":
-            return "🖼️ Image"
-        elif preset_type == "stock":
-            ticker = preset.get('ticker', 'STOCK')
-            return f"📈 {ticker}"
-        elif preset_type == "youtube":
-            channel = preset.get('channel', 'Channel')
-            if channel.startswith('@'):
-                return f"📺 {channel}"
-            return "📺 YouTube"
-        elif preset_type == "weather":
-            location = preset.get('location', 'Location')
-            return f"🌤️ {location}"
-        elif preset_type == "animation":
-            anim_type = preset.get('anim_type', 'animation')
-            anim_names = {
-                'game_of_life': '🎨 Life',
-                'matrix': '🎨 Matrix',
-                'fire': '🎨 Fire',
-                'starfield': '🎨 Stars',
-                'plasma': '🎨 Plasma'
-            }
-            return anim_names.get(anim_type, '🎨 Anim')
-        elif preset_type == "clock":
-            clock_mode = preset.get('clock_mode', 'builtin')
-            if clock_mode == 'custom':
-                format_preview = preset.get('time_format', '%H:%M:%S')
-                import time
-                return time.strftime(format_preview)
-            elif clock_mode == 'countdown':
-                event = preset.get('countdown_event', 'Event')
-                return f"⏱️ {event}"
-            else:
-                return "🕐 Clock"
-        return "..."
+        return self.preset_manager.get_preview_text(preset)
     
     def get_preset_details(self, preset):
         """Generate detail description for a preset"""
-        preset_type = preset.get('type', 'unknown')
-        
-        if preset_type == "text":
-            anim_names = {0: "Static", 1: "Scroll L", 2: "Scroll R", 4: "Flash"}
-            anim = anim_names.get(preset.get('animation', 0), "Anim")
-            rainbow = preset.get('rainbow', 0)
-            if rainbow > 0:
-                return f"{anim}, Rainbow {rainbow}"
-            return anim
-        elif preset_type == "image":
-            path = preset.get('image_path', '')
-            filename = os.path.basename(path) if path else "No file"
-            return filename
-        elif preset_type == "stock":
-            ticker = preset.get('ticker', 'UNKNOWN')
-            format_type = preset.get('format', 'price_change')
-            format_names = {
-                'price_change': 'Price + Change',
-                'price_only': 'Price Only',
-                'ticker_price': 'Ticker + Price'
-            }
-            auto_refresh = " (Auto)" if preset.get('auto_refresh', False) else ""
-            return f"{ticker} - {format_names.get(format_type, format_type)}{auto_refresh}"
-        elif preset_type == "youtube":
-            channel = preset.get('channel', 'Unknown')
-            auto_refresh = " (Auto)" if preset.get('auto_refresh', False) else ""
-            return f"Logo + Subscribers{auto_refresh}"
-        elif preset_type == "weather":
-            location = preset.get('location', 'Unknown')
-            unit = preset.get('unit', 'metric')
-            unit_symbol = "°C" if unit == "metric" else "°F"
-            auto_refresh = " (Auto)" if preset.get('auto_refresh', False) else ""
-            return f"{location} ({unit_symbol}){auto_refresh}"
-        elif preset_type == "animation":
-            anim_type = preset.get('anim_type', 'game_of_life')
-            anim_names = {
-                'game_of_life': "Conway's Life",
-                'matrix': 'Matrix Rain',
-                'fire': 'Fire Effect',
-                'starfield': 'Starfield',
-                'plasma': 'Plasma'
-            }
-            color_scheme = preset.get('color_scheme', 'white')
-            fps = preset.get('speed', 10)
-            return f"{anim_names.get(anim_type, anim_type)} - {color_scheme.title()} @ {fps}fps"
-        elif preset_type == "clock":
-            clock_mode = preset.get('clock_mode', 'builtin')
-            if clock_mode == 'custom':
-                format_map = {
-                    "%H:%M:%S": "24h with seconds",
-                    "%H:%M": "24h",
-                    "%I:%M:%S %p": "12h with seconds",
-                    "%I:%M %p": "12h",
-                }
-                fmt = preset.get('time_format', '%H:%M:%S')
-                return format_map.get(fmt, "Custom time")
-            elif clock_mode == 'countdown':
-                year = preset.get('countdown_year', 2026)
-                month = preset.get('countdown_month', 1)
-                day = preset.get('countdown_day', 1)
-                return f"To {year}-{month:02d}-{day:02d}"
-            else:
-                style = preset.get('clock_style', 0)
-                return f"Built-in style {style}"
-        return ""
+        return self.preset_manager.get_details_text(preset)
     
     def refresh_preset_buttons(self):
-        """Refresh the preset buttons display"""
-        # Clear existing buttons and cache
-        for widget in self.presets_scrollable_frame.winfo_children():
-            widget.destroy()
-        self.thumbnail_cache.clear()
-        
-        if not self.presets:
-            ttk.Label(self.presets_scrollable_frame, 
-                     text="No presets saved yet. Use other tabs to create content, then save it as a preset.",
-                     foreground="gray").pack(pady=20)
-            return
-        
-        # Create buttons for each preset
-        for idx, preset in enumerate(self.presets):
-            preset_frame = ttk.Frame(self.presets_scrollable_frame, relief=tk.RIDGE, borderwidth=1)
-            preset_frame.pack(fill=tk.X, pady=5, padx=5)
-            
-            # Get preview info
-            preview_text = self.get_preset_preview(preset)
-            preset_type = preset.get('type', 'unknown')
-            
-            # Preview label (left side) - colored background
-            preview_frame = tk.Frame(preset_frame, width=128, height=32, bg='black')
-            preview_frame.pack(side=tk.LEFT, padx=5, pady=5)
-            preview_frame.pack_propagate(False)
-            
-            # Get colors for preview
-            if preset_type == "text":
-                fg_color = preset.get('text_color', '#FFFFFF')
-                bg_color = preset.get('bg_color', '#000000')
-            elif preset_type == "stock":
-                fg_color = preset.get('text_color', '#00FF00')
-                bg_color = preset.get('bg_color', '#000000')
-            elif preset_type == "youtube":
-                fg_color = preset.get('text_color', '#FFFFFF')
-                bg_color = preset.get('bg_color', '#000000')
-            elif preset_type == "weather":
-                fg_color = preset.get('text_color', '#FFFFFF')
-                bg_color = preset.get('bg_color', '#000000')
-            elif preset_type == "animation":
-                fg_color = '#FFFFFF'
-                bg_color = '#000000'
-            elif preset_type == "clock":
-                clock_mode = preset.get('clock_mode', 'builtin')
-                if clock_mode == 'custom':
-                    fg_color = preset.get('clock_color', '#00ffff')
-                    bg_color = preset.get('clock_bg_color', '#000000')
-                elif clock_mode == 'countdown':
-                    fg_color = preset.get('countdown_color', '#00ff00')
-                    bg_color = preset.get('countdown_bg_color', '#000000')
-                else:
-                    fg_color = '#FFFFFF'
-                    bg_color = '#000000'
-            else:  # image
-                fg_color = '#FFFFFF'
-                bg_color = '#000000'
-            
-            preview_frame.config(bg=bg_color)
-            
-            # Check if preset has thumbnail data (for images/gifs)
-            thumbnail_data = preset.get('thumbnail')
-            if thumbnail_data and preset_type == "image":
-                try:
-                    # Decode base64 thumbnail and display
-                    import base64
-                    from io import BytesIO
-                    img_data = base64.b64decode(thumbnail_data)
-                    img = Image.open(BytesIO(img_data))
-                    # Scale up 2x for better visibility
-                    img = img.resize((128, 32), Image.Resampling.NEAREST)
-                    photo = ImageTk.PhotoImage(img)
-                    self.thumbnail_cache[f"thumb_{idx}"] = photo  # Keep reference
-                    preview_label = tk.Label(preview_frame, image=photo, bg=bg_color)
-                    preview_label.pack(expand=True)
-                except Exception as e:
-                    print(f"Failed to display thumbnail: {e}")
-                    # Fallback to text
-                    preview_label = tk.Label(preview_frame, text=preview_text, 
-                                            fg=fg_color, bg=bg_color,
-                                            font=('Courier', 8, 'bold'), wraplength=120)
-                    preview_label.pack(expand=True)
-            elif preset_type == "text":
-                # Render actual text preview for text presets
-                try:
-                    text_content = preset.get('text', preview_text)
-                    # Create image with text rendered at 64x16 (native resolution)
-                    thumb_img = Image.new('RGB', (64, 16), bg_color)
-                    draw = ImageDraw.Draw(thumb_img)
-                    
-                    # Try to load a font, fallback to default
-                    try:
-                        font = ImageFont.truetype("arial.ttf", 8)
-                    except:
-                        font = ImageFont.load_default()
-                    
-                    # Wrap text to fit 64 pixels width
-                    words = text_content.split()
-                    lines = []
-                    current_line = []
-                    for word in words:
-                        test_line = ' '.join(current_line + [word])
-                        bbox = draw.textbbox((0, 0), test_line, font=font)
-                        if bbox[2] - bbox[0] <= 62:  # 2px margin
-                            current_line.append(word)
-                        else:
-                            if current_line:
-                                lines.append(' '.join(current_line))
-                            current_line = [word]
-                    if current_line:
-                        lines.append(' '.join(current_line))
-                    
-                    # Limit to 2 lines (16px height)
-                    lines = lines[:2]
-                    
-                    # Draw text centered
-                    y_offset = (16 - len(lines) * 8) // 2
-                    for i, line in enumerate(lines):
-                        bbox = draw.textbbox((0, 0), line, font=font)
-                        text_width = bbox[2] - bbox[0]
-                        x = (64 - text_width) // 2
-                        draw.text((x, y_offset + i * 8), line, fill=fg_color, font=font)
-                    
-                    # Scale up 2x for better visibility
-                    thumb_img = thumb_img.resize((128, 32), Image.Resampling.NEAREST)
-                    photo = ImageTk.PhotoImage(thumb_img)
-                    self.thumbnail_cache[f"thumb_{idx}"] = photo
-                    preview_label = tk.Label(preview_frame, image=photo, bg=bg_color)
-                    preview_label.pack(expand=True)
-                except Exception as e:
-                    print(f"Failed to render text thumbnail: {e}")
-                    # Fallback to simple label
-                    preview_label = tk.Label(preview_frame, text=preview_text, 
-                                            fg=fg_color, bg=bg_color,
-                                            font=('Courier', 8, 'bold'), wraplength=120)
-                    preview_label.pack(expand=True)
-            else:
-                # Clock or other presets - use text preview
-                preview_label = tk.Label(preview_frame, text=preview_text, 
-                                        fg=fg_color, bg=bg_color,
-                                        font=('Courier', 8, 'bold'), wraplength=120)
-                preview_label.pack(expand=True)
+        """Wrapper for ControlBoardTab.refresh_preset_buttons"""
+        if hasattr(self, 'control_board_tab'):
+            self.control_board_tab.refresh_preset_buttons()
             
             # Info frame (middle)
             info_frame = ttk.Frame(preset_frame)
@@ -4823,19 +4477,8 @@ class iPixelController:
             messagebox.showwarning("Not Connected", "Please connect to a device first")
             return
         
-        # Stop any running live clock first
-        if hasattr(self, 'clock_running') and self.clock_running:
-            self.stop_live_clock()
-        self._stop_sprite_scroll()
-        if self.text_static_timer:
-            self.root.after_cancel(self.text_static_timer)
-            self.text_static_timer = None
-        if self.countdown_static_timer:
-            self.root.after_cancel(self.countdown_static_timer)
-            self.countdown_static_timer = None
-        
-        # Stop any running stock auto-refresh
-        self.stop_stock_refresh()
+        # Stop any running display tasks first
+        self._stop_active_display_tasks()
         
         # Save as last preset for state restoration
         self.settings['last_preset'] = preset.get('name')
@@ -5651,9 +5294,10 @@ class iPixelController:
     def delete_preset(self, index):
         """Delete a preset"""
         if messagebox.askyesno("Delete Preset", f"Delete preset '{self.presets[index]['name']}'?"):
-            del self.presets[index]
-            self.save_presets()
-            self.refresh_preset_buttons()
+            if self.preset_manager.delete_preset(index):
+                self.presets = self.preset_manager.presets
+                self.refresh_preset_buttons()
+                logger.info(f"Preset at index {index} deleted")
     
     def import_presets(self):
         """Import presets from a JSON file"""
@@ -5774,11 +5418,13 @@ class iPixelController:
                 duration_value = 10.0
             if duration_value <= 0:
                 duration_value = 0.1
-            self.playlist.append({
-                'preset_name': preset_var.get(),
-                'duration': duration_value,
-                'use_anim_duration': use_anim_duration_var.get()
-            })
+            
+            self.playlist_manager.add_item(
+                preset_name=preset_var.get(),
+                duration=duration_value,
+                use_anim_duration=use_anim_duration_var.get()
+            )
+            self.playlist = self.playlist_manager.playlist
             refresh_playlist_display()
         
         ttk.Button(add_controls, text="➕ Add", command=add_to_playlist).pack(side=tk.LEFT)
@@ -5791,27 +5437,31 @@ class iPixelController:
             selection = playlist_listbox.curselection()
             if selection and selection[0] > 0:
                 idx = selection[0]
-                self.playlist[idx], self.playlist[idx-1] = self.playlist[idx-1], self.playlist[idx]
-                refresh_playlist_display()
-                playlist_listbox.selection_set(idx-1)
+                if self.playlist_manager.move_item(idx, -1):
+                    self.playlist = self.playlist_manager.playlist
+                    refresh_playlist_display()
+                    playlist_listbox.selection_set(idx-1)
         
         def move_down():
             selection = playlist_listbox.curselection()
             if selection and selection[0] < len(self.playlist) - 1:
                 idx = selection[0]
-                self.playlist[idx], self.playlist[idx+1] = self.playlist[idx+1], self.playlist[idx]
-                refresh_playlist_display()
-                playlist_listbox.selection_set(idx+1)
+                if self.playlist_manager.move_item(idx, 1):
+                    self.playlist = self.playlist_manager.playlist
+                    refresh_playlist_display()
+                    playlist_listbox.selection_set(idx+1)
         
         def remove_item():
             selection = playlist_listbox.curselection()
             if selection:
-                self.playlist.pop(selection[0])
-                refresh_playlist_display()
+                if self.playlist_manager.remove_item(selection[0]):
+                    self.playlist = self.playlist_manager.playlist
+                    refresh_playlist_display()
         
         def clear_playlist():
             if messagebox.askyesno("Clear Playlist", "Remove all items from playlist?"):
-                self.playlist.clear()
+                self.playlist_manager.clear()
+                self.playlist = self.playlist_manager.playlist
                 refresh_playlist_display()
         
         ttk.Button(control_frame, text="⬆️ Move Up", command=move_up).pack(side=tk.LEFT, padx=(0, 5))
@@ -5831,48 +5481,53 @@ class iPixelController:
             messagebox.showwarning("Not Connected", "Connect to device first")
             return
         
-        if self.playlist_running and self.playlist_paused:
+        if self.playlist_manager.is_playing and self.playlist_manager.is_paused:
             # Resume
-            self.playlist_paused = False
-            self.playlist_status_var.set(f"Playlist: Playing ({self.playlist_index + 1}/{len(self.playlist)})")
+            self.playlist_manager.resume()
+            self._update_playlist_status()
             self.schedule_next_preset()
         else:
             # Start from beginning
-            self.playlist_running = True
-            self.playlist_paused = False
-            self.playlist_index = 0
-            self.playlist_status_var.set(f"Playlist: Playing ({self.playlist_index + 1}/{len(self.playlist)})")
-            self.play_next_preset()
+            if self.playlist_manager.start():
+                self._update_playlist_status()
+                self.play_next_preset()
     
     def pause_playlist(self):
         """Pause the playlist"""
-        if self.playlist_running and not self.playlist_paused:
-            self.playlist_paused = True
+        if self.playlist_manager.pause():
             if self.playlist_timer:
                 self.root.after_cancel(self.playlist_timer)
                 self.playlist_timer = None
-            self.playlist_status_var.set(f"Playlist: Paused ({self.playlist_index + 1}/{len(self.playlist)})")
+            self._update_playlist_status()
     
     def stop_playlist(self):
         """Stop the playlist"""
-        self.playlist_running = False
-        self.playlist_paused = False
-        self.playlist_index = 0
+        self.playlist_manager.stop()
         if self.playlist_timer:
             self.root.after_cancel(self.playlist_timer)
             self.playlist_timer = None
-        self.playlist_status_var.set("Playlist: Not running")
+        self._update_playlist_status()
     
+    def _update_playlist_status(self):
+        """Update playlist status text based on manager state"""
+        if not self.playlist_manager.is_playing:
+            self.playlist_status_var.set("Playlist: Not running")
+        elif self.playlist_manager.is_paused:
+            status = f"Playlist: Paused ({self.playlist_manager.current_index + 1}/{len(self.playlist)})"
+            self.playlist_status_var.set(status)
+        else:
+            status = f"Playlist: Playing ({self.playlist_manager.current_index + 1}/{len(self.playlist)})"
+            self.playlist_status_var.set(status)
     def play_next_preset(self):
         """Play the current preset in the playlist"""
-        if not self.playlist_running or self.playlist_paused:
+        if not self.playlist_manager.is_playing or self.playlist_manager.is_paused:
             return
         
-        if self.playlist_index >= len(self.playlist):
-            # Loop back to start
-            self.playlist_index = 0
-        
-        item = self.playlist[self.playlist_index]
+        item = self.playlist_manager.get_next_item()
+        if not item:
+            self.stop_playlist()
+            return
+            
         preset_name = item['preset_name']
         duration = float(item.get('duration', 0))
         use_anim_duration = item.get('use_anim_duration', False)
@@ -5880,7 +5535,10 @@ class iPixelController:
         # Find and execute the preset
         preset = next((p for p in self.presets if p['name'] == preset_name), None)
         if preset:
-            self.playlist_status_var.set(f"Playlist: Playing '{preset_name}' ({self.playlist_index + 1}/{len(self.playlist)})")
+            self._update_playlist_status()
+            # Update status with current preset name (optional, but nice)
+            self.playlist_status_var.set(f"Playlist: Playing '{preset_name}' ({self.playlist_manager.current_index + 1}/{len(self.playlist)})")
+            
             threading.Thread(target=self.execute_preset, args=(preset,), daemon=True).start()
 
             # Schedule next preset
@@ -5888,31 +5546,29 @@ class iPixelController:
             if use_anim_duration and preset.get('type') == 'animation':
                 anim_duration = float(preset.get('duration', 0) or 0)
                 if anim_duration <= 0:
-                    anim_duration = float(self.anim_duration_var.get() or 0)
+                    try:
+                        anim_duration = float(self.anim_duration_var.get() or 0)
+                    except:
+                        anim_duration = 0
                 if anim_duration > 0:
                     delay_seconds = anim_duration
-                    self.playlist_status_var.set(
-                        f"Playlist: Playing '{preset_name}' (anim {anim_duration}s)"
-                    )
-                else:
-                    self.playlist_status_var.set(
-                        f"Playlist: Playing '{preset_name}' (anim=0, using {duration}s)"
-                    )
+            
             if delay_seconds <= 0:
                 delay_seconds = 0.1
+                
             self.schedule_next_preset(delay_seconds)
         else:
             # Preset not found, skip to next
-            self.playlist_index += 1
+            logger.warning(f"Playlist: Preset '{preset_name}' not found, skipping...")
             self.play_next_preset()
     
     def schedule_next_preset(self, delay_seconds=None):
         """Schedule the next preset to play"""
-        if delay_seconds is None and self.playlist_index < len(self.playlist):
-            delay_seconds = self.playlist[self.playlist_index]['duration']
+        if delay_seconds is None and self.playlist_manager.current_index < len(self.playlist):
+            item = self.playlist[self.playlist_manager.current_index]
+            delay_seconds = item['duration']
         
-        if delay_seconds and self.playlist_running and not self.playlist_paused:
-            self.playlist_index += 1
+        if delay_seconds and self.playlist_manager.is_playing and not self.playlist_manager.is_paused:
             delay_ms = max(1, int(round(delay_seconds * 1000)))
             self.playlist_timer = self.root.after(delay_ms, self.play_next_preset)
     
@@ -5940,43 +5596,21 @@ class iPixelController:
                 messagebox.showwarning("No Name", "Please enter a playlist name")
                 return
             
-            # Create playlists directory if it doesn't exist
-            playlists_dir = "playlists"
-            if not os.path.exists(playlists_dir):
-                os.makedirs(playlists_dir)
-            
-            filename = os.path.join(playlists_dir, f"{name}.json")
-            
-            try:
-                playlist_data = {
-                    "name": name,
-                    "items": self.playlist
-                }
-                
-                with open(filename, 'w') as f:
-                    json.dump(playlist_data, f, indent=2)
-                
-                self.current_playlist_file = filename
+            if self.playlist_manager.save_playlist(name):
+                self.current_playlist_file = os.path.join(self.playlist_manager.playlists_dir, f"{name}.json")
                 self.current_playlist_name_var.set(f"📋 {name}")
                 dialog.destroy()
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to save playlist: {str(e)}")
+                logger.info(f"Playlist '{name}' saved")
+            else:
+                messagebox.showerror("Error", "Failed to save playlist")
         
         ttk.Button(dialog, text="Save", command=save).pack(pady=10)
     
     def load_playlist_dialog(self):
         """Show dialog to select and load a playlist"""
-        playlists_dir = "playlists"
+        playlist_names = self.playlist_manager.list_playlists()
         
-        # Check if playlists directory exists
-        if not os.path.exists(playlists_dir):
-            messagebox.showinfo("No Playlists", "No saved playlists found. Create and save a playlist first.")
-            return
-        
-        # Get all playlist files
-        playlist_files = [f for f in os.listdir(playlists_dir) if f.endswith('.json')]
-        
-        if not playlist_files:
+        if not playlist_names:
             messagebox.showinfo("No Playlists", "No saved playlists found. Create and save a playlist first.")
             return
         
@@ -6002,9 +5636,8 @@ class iPixelController:
         scrollbar.config(command=playlist_listbox.yview)
         
         # Populate listbox
-        for filename in sorted(playlist_files):
-            display_name = filename[:-5]  # Remove .json extension
-            playlist_listbox.insert(tk.END, display_name)
+        for name in sorted(playlist_names):
+            playlist_listbox.insert(tk.END, name)
         
         def load_selected():
             selection = playlist_listbox.curselection()
@@ -6012,20 +5645,16 @@ class iPixelController:
                 messagebox.showwarning("No Selection", "Please select a playlist")
                 return
             
-            filename = playlist_files[selection[0]]
-            filepath = os.path.join(playlists_dir, filename)
+            name = playlist_listbox.get(selection[0])
             
-            try:
-                with open(filepath, 'r') as f:
-                    playlist_data = json.load(f)
-                
-                self.playlist = playlist_data.get('items', [])
-                self.current_playlist_file = filepath
-                self.current_playlist_name_var.set(f"📋 {playlist_data.get('name', filename[:-5])}")
+            if self.playlist_manager.load_playlist(name):
+                self.playlist = self.playlist_manager.playlist
+                self.current_playlist_file = os.path.join(self.playlist_manager.playlists_dir, f"{name}.json")
+                self.current_playlist_name_var.set(f"📋 {name}")
                 dialog.destroy()
-                messagebox.showinfo("Success", f"Loaded playlist with {len(self.playlist)} item(s)")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to load playlist: {str(e)}")
+                messagebox.showinfo("Success", f"Loaded playlist '{name}' with {len(self.playlist)} item(s)")
+            else:
+                messagebox.showerror("Error", f"Failed to load playlist '{name}'")
         
         def delete_selected():
             selection = playlist_listbox.curselection()
@@ -6033,14 +5662,17 @@ class iPixelController:
                 messagebox.showwarning("No Selection", "Please select a playlist to delete")
                 return
             
-            filename = playlist_files[selection[0]]
-            display_name = filename[:-5]
+            name = playlist_listbox.get(selection[0])
             
-            if messagebox.askyesno("Confirm Delete", f"Delete playlist '{display_name}'?"):
+            if messagebox.askyesno("Confirm Delete", f"Delete playlist '{name}'?"):
                 try:
-                    os.remove(os.path.join(playlists_dir, filename))
-                    playlist_listbox.delete(selection[0])
-                    playlist_files.pop(selection[0])
+                    filepath = os.path.join(self.playlist_manager.playlists_dir, f"{name}.json")
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+                        playlist_listbox.delete(selection[0])
+                        logger.info(f"Playlist '{name}' deleted from disk")
+                    else:
+                        messagebox.showerror("Error", "File not found")
                 except Exception as e:
                     messagebox.showerror("Error", f"Failed to delete: {str(e)}")
         

@@ -1,0 +1,133 @@
+2026-01-23 13:59:17 - iPIXEL - INFO - Test log entry
+2026-01-23 14:00:49 - iPIXEL - DEBUG - Displaying 12 of 12 presets
+2026-01-23 14:00:50 - iPIXEL - INFO - Keyboard shortcuts initialized
+2026-01-23 14:01:10 - iPIXEL - DEBUG - Displaying 2 of 12 presets
+2026-01-23 14:01:12 - iPIXEL - DEBUG - Displaying 12 of 12 presets
+2026-01-23 14:20:30 - iPIXEL - DEBUG - Displaying 12 of 12 presets
+2026-01-23 14:20:31 - iPIXEL - INFO - Settings tab created with theme toggle
+2026-01-23 14:20:31 - iPIXEL - INFO - Keyboard shortcuts initialized
+2026-01-23 14:20:39 - iPIXEL - INFO - Theme changed to: dark
+2026-01-23 14:20:47 - iPIXEL - DEBUG - Displaying 12 of 12 presets
+2026-01-23 14:20:48 - iPIXEL - INFO - Settings tab created with theme toggle
+2026-01-23 14:20:48 - iPIXEL - INFO - Keyboard shortcuts initialized
+2026-01-23 14:20:56 - iPIXEL - INFO - Theme changed to: light
+2026-01-23 14:23:28 - iPIXEL - DEBUG - Displaying 12 of 12 presets
+2026-01-23 14:23:29 - iPIXEL - INFO - Settings tab created with theme toggle
+2026-01-23 14:23:29 - iPIXEL - INFO - Keyboard shortcuts initialized
+2026-01-23 14:23:43 - iPIXEL - INFO - Theme changed to: dark
+2026-01-23 15:40:34 - iPIXEL - INFO - Fetching stock data for: AAPL
+2026-01-23 15:40:34 - iPIXEL - INFO - Successfully fetched stock data for Apple Inc.
+2026-01-23 15:40:34 - iPIXEL - INFO - Fetching Microsoft Graph access token
+2026-01-23 15:40:34 - iPIXEL - INFO - Successfully obtained Microsoft Graph access token
+2026-01-23 15:40:34 - iPIXEL - INFO - Fetching Teams presence for user: user@example.com
+2026-01-23 15:40:34 - iPIXEL - INFO - Presence for user@example.com: Available (Available)
+2026-01-23 15:40:34 - iPIXEL - INFO - Fetching weather for: London (units=metric)
+2026-01-23 15:40:34 - iPIXEL - INFO - Successfully fetched weather for London
+2026-01-23 15:40:35 - iPIXEL - INFO - Fetching YouTube stats for: @test
+2026-01-23 15:40:35 - iPIXEL - INFO - Successfully fetched stats for Test Channel
+2026-01-23 15:47:53 - iPIXEL - INFO - PresetManager initialized with 12 presets
+2026-01-23 15:47:53 - iPIXEL - INFO - PlaylistManager initialized. Data dir: C:\FRS\SortMe\iPIXEL Control\playlists
+2026-01-23 15:47:53 - iPIXEL - INFO - ConnectionManager initialized
+2026-01-23 15:47:54 - iPIXEL - DEBUG - Displaying 12 of 12 presets
+2026-01-23 15:47:55 - iPIXEL - INFO - Settings tab created with theme toggle
+2026-01-23 15:47:55 - iPIXEL - INFO - Keyboard shortcuts initialized
+2026-01-23 15:47:55 - iPIXEL - DEBUG - Saved last tab index: 0
+2026-01-23 15:52:30 - iPIXEL - INFO - Scanning for devices (timeout=5.0s)...
+2026-01-23 15:52:35 - iPIXEL - INFO - Scan complete. Found 1 candidate devices.
+2026-01-23 15:52:38 - iPIXEL - INFO - Connection state changed to: connecting
+2026-01-23 15:52:38 - iPIXEL - INFO - Connecting to 8B:84:96:03:7E:B5...
+2026-01-23 15:52:40 - iPIXEL - INFO - Connection state changed to: connected
+2026-01-23 15:52:40 - iPIXEL - INFO - Connection established to 8B:84:96:03:7E:B5
+2026-01-23 15:52:40 - iPIXEL - INFO - Connection monitoring started
+2026-01-23 15:53:01 - iPIXEL - INFO - Fetching YouTube stats for: UCw2tgmmR0bwhIkZ_tRib2SA
+2026-01-23 15:53:01 - iPIXEL - INFO - Successfully fetched stats for Update Conference
+2026-01-23 15:55:34 - iPIXEL - DEBUG - Saved last tab index: 4
+2026-01-23 15:55:35 - iPIXEL - INFO - Fetching stock data for: AAPL
+2026-01-23 15:55:36 - iPIXEL - INFO - Successfully fetched stock data for Apple Inc.
+2026-01-23 15:57:49 - iPIXEL - DEBUG - Saved last tab index: 0
+2026-01-23 15:58:28 - iPIXEL - INFO - Fetching YouTube stats for: UCw2tgmmR0bwhIkZ_tRib2SA
+2026-01-23 15:58:29 - iPIXEL - INFO - Successfully fetched stats for Update Conference
+2026-01-23 15:58:37 - iPIXEL - DEBUG - Saved last tab index: 4
+2026-01-23 15:58:40 - iPIXEL - DEBUG - Saved last tab index: 6
+2026-01-23 15:58:42 - iPIXEL - INFO - Fetching weather for: London (units=metric)
+2026-01-23 15:58:42 - iPIXEL - INFO - Successfully fetched weather for London
+2026-01-23 15:58:47 - iPIXEL - DEBUG - Saved last tab index: 7
+2026-01-23 15:59:05 - iPIXEL - DEBUG - Saved last tab index: 0
+2026-01-23 15:59:08 - iPIXEL - DEBUG - Saved last tab index: 7
+2026-01-23 15:59:11 - iPIXEL - DEBUG - Saved last tab index: 0
+2026-01-23 15:59:13 - iPIXEL - INFO - Fetching weather for: Ostrava (units=metric)
+2026-01-23 15:59:13 - iPIXEL - INFO - Successfully fetched weather for Ostrava
+2026-01-23 16:23:45 - iPIXEL - DEBUG - Displaying 2 of 12 presets
+2026-01-23 16:23:52 - iPIXEL - DEBUG - Displaying 12 of 12 presets
+2026-01-23 16:24:09 - iPIXEL - DEBUG - Saved last tab index: 1
+2026-01-23 16:25:03 - iPIXEL - DEBUG - Saved last tab index: 2
+2026-01-23 16:25:04 - iPIXEL - DEBUG - Saved last tab index: 3
+2026-01-23 16:26:04 - iPIXEL - DEBUG - Saved last tab index: 1
+2026-01-23 16:32:56 - iPIXEL - INFO - PresetManager initialized with 12 presets
+2026-01-23 16:32:56 - iPIXEL - INFO - PlaylistManager initialized. Data dir: C:\FRS\SortMe\iPIXEL Control\playlists
+2026-01-23 16:32:56 - iPIXEL - INFO - ConnectionManager initialized
+2026-01-23 16:32:58 - iPIXEL - INFO - Settings tab created with theme toggle
+2026-01-23 16:32:58 - iPIXEL - INFO - Keyboard shortcuts initialized
+2026-01-23 16:32:58 - iPIXEL - DEBUG - Saved last tab index: 0
+2026-01-23 16:33:07 - iPIXEL - INFO - Scanning for devices (timeout=5.0s)...
+2026-01-23 16:33:12 - iPIXEL - INFO - Scan complete. Found 1 candidate devices.
+2026-01-23 16:33:17 - iPIXEL - INFO - Connection state changed to: connecting
+2026-01-23 16:33:17 - iPIXEL - INFO - Connecting to 8B:84:96:03:7E:B5...
+2026-01-23 16:33:19 - iPIXEL - INFO - Connection state changed to: connected
+2026-01-23 16:33:19 - iPIXEL - INFO - Connection established to 8B:84:96:03:7E:B5
+2026-01-23 16:33:19 - iPIXEL - INFO - Connection monitoring started
+2026-01-23 16:33:45 - iPIXEL - DEBUG - Saved last tab index: 3
+2026-01-23 16:33:51 - iPIXEL - DEBUG - Saved last tab index: 1
+2026-01-23 16:34:04 - iPIXEL - DEBUG - Saved last tab index: 3
+2026-01-23 16:34:30 - iPIXEL - DEBUG - Saved last tab index: 1
+2026-01-23 16:39:38 - iPIXEL - INFO - PresetManager initialized with 12 presets
+2026-01-23 16:39:38 - iPIXEL - INFO - PlaylistManager initialized. Data dir: C:\FRS\SortMe\iPIXEL Control\playlists
+2026-01-23 16:39:38 - iPIXEL - INFO - ConnectionManager initialized
+2026-01-23 16:39:40 - iPIXEL - INFO - Settings tab created with theme toggle
+2026-01-23 16:39:40 - iPIXEL - INFO - Keyboard shortcuts initialized
+2026-01-23 16:39:40 - iPIXEL - DEBUG - Saved last tab index: 0
+2026-01-23 16:40:14 - iPIXEL - INFO - PresetManager initialized with 12 presets
+2026-01-23 16:40:14 - iPIXEL - INFO - PlaylistManager initialized. Data dir: C:\FRS\SortMe\iPIXEL Control\playlists
+2026-01-23 16:40:14 - iPIXEL - INFO - ConnectionManager initialized
+2026-01-23 16:40:16 - iPIXEL - INFO - Settings tab created with theme toggle
+2026-01-23 16:40:16 - iPIXEL - INFO - Keyboard shortcuts initialized
+2026-01-23 16:40:16 - iPIXEL - DEBUG - Saved last tab index: 0
+2026-01-23 16:40:21 - iPIXEL - INFO - Scanning for devices (timeout=5.0s)...
+2026-01-23 16:40:27 - iPIXEL - INFO - Scan complete. Found 1 candidate devices.
+2026-01-23 16:40:28 - iPIXEL - INFO - Connection state: disconnected -> connecting
+2026-01-23 16:40:28 - iPIXEL - INFO - Connection state changed to: connecting
+2026-01-23 16:40:28 - iPIXEL - INFO - Connecting to 8B:84:96:03:7E:B5...
+2026-01-23 16:40:29 - iPIXEL - INFO - Connection state: connecting -> connected
+2026-01-23 16:40:29 - iPIXEL - INFO - Connection state changed to: connected
+2026-01-23 16:40:29 - iPIXEL - INFO - Connection established to 8B:84:96:03:7E:B5
+2026-01-23 16:40:29 - iPIXEL - INFO - Connection monitoring started
+2026-01-23 16:40:36 - iPIXEL - DEBUG - Saved last tab index: 1
+2026-01-23 16:40:48 - iPIXEL - DEBUG - Saved last tab index: 3
+2026-01-23 16:40:55 - iPIXEL - DEBUG - Saved last tab index: 4
+2026-01-23 16:40:58 - iPIXEL - INFO - Fetching stock data for: AAPL
+2026-01-23 16:40:59 - iPIXEL - INFO - Successfully fetched stock data for Apple Inc.
+2026-01-23 16:41:08 - iPIXEL - DEBUG - Saved last tab index: 0
+2026-01-23 16:41:12 - iPIXEL - INFO - Loaded playlist ALL with 7 items
+2026-01-23 16:41:16 - iPIXEL - INFO - Loaded playlist ALL with 7 items
+2026-01-23 16:41:24 - iPIXEL - INFO - Loaded playlist ITIXO with 3 items
+2026-01-23 16:47:30 - iPIXEL - INFO - PresetManager initialized with 12 presets
+2026-01-23 16:47:30 - iPIXEL - INFO - PlaylistManager initialized. Data dir: C:\FRS\SortMe\iPIXEL Control\playlists
+2026-01-23 16:47:30 - iPIXEL - INFO - ConnectionManager initialized
+2026-01-23 16:47:32 - iPIXEL - INFO - Settings tab created with theme toggle
+2026-01-23 16:47:32 - iPIXEL - INFO - Keyboard shortcuts initialized
+2026-01-23 16:47:32 - iPIXEL - DEBUG - Saved last tab index: 0
+2026-01-23 16:47:33 - iPIXEL - INFO - Scanning for devices (timeout=5.0s)...
+2026-01-23 16:47:38 - iPIXEL - INFO - Scan complete. Found 1 candidate devices.
+2026-01-23 16:47:38 - iPIXEL - INFO - Connection state: disconnected -> connecting
+2026-01-23 16:47:38 - iPIXEL - INFO - Connection state changed to: connecting
+2026-01-23 16:47:38 - iPIXEL - INFO - Connecting to 8B:84:96:03:7E:B5...
+2026-01-23 16:47:39 - iPIXEL - INFO - Connection state: connecting -> connected
+2026-01-23 16:47:39 - iPIXEL - INFO - Connection state changed to: connected
+2026-01-23 16:47:39 - iPIXEL - INFO - Connection established to 8B:84:96:03:7E:B5
+2026-01-23 16:47:39 - iPIXEL - INFO - Connection monitoring started
+2026-01-23 16:49:53 - iPIXEL - DEBUG - Saved last tab index: 4
+2026-01-23 16:49:54 - iPIXEL - DEBUG - Saved last tab index: 3
+2026-01-23 16:50:01 - iPIXEL - DEBUG - Saved last tab index: 5
+2026-01-23 16:50:03 - iPIXEL - DEBUG - Saved last tab index: 4
+2026-01-23 16:50:04 - iPIXEL - INFO - Fetching stock data for: AAPL
+2026-01-23 16:50:05 - iPIXEL - INFO - Successfully fetched stock data for Apple Inc.
