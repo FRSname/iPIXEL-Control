@@ -26,13 +26,17 @@ A desktop application to control iPixel Color LED matrix displays (like BGLight,
 
 **Note:** Use `run.py` instead of `run.bat` - Python files aren't blocked by Windows Smart App Control!
 
+### API Keys (stored separately)
+
+API keys are stored in `ipixel_secrets.json` (gitignored). Add keys via the app UI (YouTube/Weather tabs) and they will be saved there.
+
 ## Features
 
 ### Core Features
 - 🔍 **Auto-scan** for iPixel devices via Bluetooth
-- 📝 **Send text** with customizable font size, text color, and background color
+- 📝 **Send text** with customizable text color, background color, and sprite fonts
 - 🖼️ **Display images** (PNG, JPG, GIF, BMP) with thumbnail previews
-- 🕐 **Clock mode** with 9 different styles, custom time formats, and countdown timers
+- 🕐 **Clock mode** with built-in styles, custom time formats, and countdown timers
 - 💾 **Preset system** - Save and quickly execute your favorite configurations
 - 💡 **Brightness control** (1-100%)
 - ⚡ **Power control** (ON/OFF)
@@ -48,25 +52,16 @@ Display live stock prices directly on your LED panel!
 - Auto-refresh with configurable intervals
 - Smart price formatting (auto-adjusts decimals, uses K notation for large numbers)
 - Auto-color based on price movement (green=up, red=down)
-- Multiple display formats:
-  - Price + Change percentage with arrows (↑/↓)
-  - Price only
-  - Ticker + Price
+- Multiple display formats (with static cycling for some formats)
 
 #### 📺 YouTube Stats
-Show your YouTube channel statistics on your display!
-- Display subscriber counts, total views, video counts
-- Support for latest video view counts
+Show your YouTube channel subscribers with an optional inline logo.
 - Works with channel IDs or @handles
 - Auto-refresh capability
 - Smart number formatting (1.2M, 450K, etc.)
-- Multiple display formats:
-  - Subscribers + Views
-  - Subscribers only
-  - Channel name + Subscribers
-  - Latest video views
-- **Requires:** Free YouTube Data API v3 key from Google Cloud Console
-- **Quota:** 10,000 units/day (free tier)
+- **Format:** Logo + Subscribers only
+- **Logo requirement:** 14x16 PNG (auto-resized if needed)
+- **Requires:** YouTube Data API v3 key (stored in `ipixel_secrets.json`)
 
 #### 🌤️ Weather Display
 Show current weather conditions and temperature!
@@ -80,7 +75,7 @@ Show current weather conditions and temperature!
   - Temperature only
   - City + Temperature
   - Full info
-- **Requires:** Free OpenWeatherMap API key
+- **Requires:** Free OpenWeatherMap API key (stored in `ipixel_secrets.json`)
 - **Quota:** 1,000 calls/day, updates every 10 minutes (free tier)
 
 #### 🎨 Pixel Art Animations
@@ -168,7 +163,7 @@ To create a standalone .exe file that doesn't require Python:
 2. Enter your text in the text box
 3. Choose text color (default: white)
 4. Choose background color (default: black)
-5. Adjust font size (6-32)
+5. Select a sprite font (optional)
 6. Click **"Send Text"**
 
 **Tips:**
@@ -215,19 +210,21 @@ The clock will display the current time and update automatically.
 2. Enter your **YouTube API key** (get one from [Google Cloud Console](https://console.cloud.google.com/))
 3. Enter a channel ID or @handle (e.g., @MrBeast)
 4. Click **"Fetch Stats"**
-5. Choose display format (subs only, subs + views, etc.)
-6. Click **"Send to Display"**
+5. Click **"Send to Display"**
 
-**Display formats:**
-- Subscribers + Views
-- Subscribers Only
-- Channel Name + Subscribers
-- Latest Video Views
+**Format:** Logo + Subscribers only
 
 ### 7. Weather Display
 
 1. Go to the **"🌤️ Weather"** tab
 2. Enter your **OpenWeatherMap API key** (get free key from [openweathermap.org](https://openweathermap.org/api))
+## Developer Notes
+
+- Default assets live under `Gallery/` and are referenced with relative paths.
+- Sprite fonts are managed in Settings → Sprite Fonts and stored in `ipixel_settings.json`.
+- API keys are saved in `ipixel_secrets.json` (gitignored).
+
+See [AGENTS.md](AGENTS.md) for internal architecture and contributor notes.
 3. Enter your city name
 4. Select temperature unit (°C or °F)
 5. Click **"Fetch Weather"**
